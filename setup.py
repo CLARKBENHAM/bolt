@@ -66,10 +66,10 @@ else:  # based on Issue #4
         os.environ['CC'] = "clang"
     if "CXX" not in os.environ:
         os.environ['CXX'] = "clang++"
-    # extra_args += ['-stdlib=libc++']
-    # os.environ['CC'] = "clang"
-    # os.environ['CXX'] = "clang++"
-    # os.environ['LDFLAGS'] = '-lc++'
+    extra_args += ['-stdlib=libc++']
+    os.environ['CC'] = "clang-3.9"
+    os.environ['CXX'] = "clang++"
+    os.environ['LDFLAGS'] = '-lc++'
 # else:
     # os.environ["CC"] = "clang++"  # force compiling c as c++
 
