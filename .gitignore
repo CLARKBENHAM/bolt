@@ -122,4 +122,4 @@ __pycache__
 figs/
 _results/
 notes.txt
-
+.env
