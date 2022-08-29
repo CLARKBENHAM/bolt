@@ -1,3 +1,1 @@
 bazel*
-# don't need this random build file?
-build-bolt/*

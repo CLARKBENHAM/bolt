@@ -36,28 +36,31 @@ RUN unzip libtorch-shared-with-deps-latest.zip && rm libtorch-shared-with-deps-l
 
 # Get conda working
 ENV PATH=$PATH:/root/local/miniconda/bin/  
-RUN conda init bash
+RUN conda init bash && . ~/.bashrc
 
 ###########################Clark Added Below
 
 #How to Git clone in Docker?
+#TODO: should be my branch to clone; but then need git crreds
 RUN git clone https://github.com/pytorch/extension-script.git
-RUN git clone https://github.com/dblalock/bolt.git
+RUN git clone https://github.com/dblalock/bolt.git 
 
 ###%% Things added to get Bolt working; could've just used their docker?: https://github.com/dblalock/bolt/blob/master/BUILD.md
 WORKDIR bolt/
-RUN apt update -y
-RUN sudo apt-get install \
+RUN apt-get install \
 	build-essential \
 	clang-3.9 \
 	libc++-dev \
 	libeigen3-dev \
 	swig \
+	sudo \
+	apt-transport-https \
+	curl \
+	gnupg \
 	 -y
 
 #Need to install Bazel for build
-RUN sudo apt install apt-transport-https curl gnupg \
-	&& curl -fsSL https://bazel.build/bazel-release.pub.gpg | gpg --dearmor >bazel-archive-keyring.gpg \
+RUN curl -fsSL https://bazel.build/bazel-release.pub.gpg | gpg --dearmor >bazel-archive-keyring.gpg \
 	&& sudo mv bazel-archive-keyring.gpg /usr/share/keyrings \
 	&& echo "deb [arch=amd64 signed-by=/usr/share/keyrings/bazel-archive-keyring.gpg] https://storage.googleapis.com/bazel-apt stable jdk1.8" | sudo tee /etc/apt/sources.list.d/bazel.list \
 	&& sudo apt update && sudo apt install bazel
@@ -68,9 +71,10 @@ RUN conda install --file requirements.txt
 RUN cd .. \
 	&& git clone -b mneilly/cythonize https://github.com/mneilly/kmc2.git \
 	&& cd kmc2 \
+	&& . ~/.bashrc \
 	&& python setup.py install
 
-RUN cd bolt/cpp && bazel run :main
+RUN cd cpp && bazel run :main
 RUN python setup.py install 
 #Note: 1 test currently fails
 # && pytest tests/ 
