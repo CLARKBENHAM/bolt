@@ -36,7 +36,8 @@ RUN unzip libtorch-shared-with-deps-latest.zip && rm libtorch-shared-with-deps-l
 
 # Get conda working
 ENV PATH=$PATH:/root/local/miniconda/bin/  
-RUN conda init bash && . ~/.bashrc
+#. bashrc unnessiary
+RUN conda init bash 
 
 ###########################Clark Added Below
 
@@ -66,6 +67,7 @@ RUN curl -fsSL https://bazel.build/bazel-release.pub.gpg | gpg --dearmor >bazel-
 	&& sudo apt update && sudo apt install bazel
 
 #Bolt packages
+RUN head -1 /dev/random
 RUN conda install --file requirements.txt 
 #install kmc2 
 RUN cd .. \
@@ -73,8 +75,7 @@ RUN cd .. \
 	&& cd kmc2 \
 	&& . ~/.bashrc \
 	&& python setup.py install
+# && pytest tests/ 
+#Note: 1 test currently fails
 
 RUN cd cpp && bazel run :main
-RUN python setup.py install 
-#Note: 1 test currently fails
-# && pytest tests/ 
