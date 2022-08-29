@@ -39,14 +39,8 @@ RUN unzip libtorch-shared-with-deps-latest.zip && rm libtorch-shared-with-deps-l
 
 ###########################Clark Added Below
 
-#How to Git clone in Docker?
-#TODO: should be my branch to clone; but then need git creds. For now just using on same volume as repos already exist on
-RUN git clone https://github.com/pytorch/extension-script.git
-# RUN git clone https://github.com/dblalock/bolt.git 
-COPY . /home/cbenham/bolt
-
-###%% Things added to get Bolt working; could've just used their docker?: https://github.com/dblalock/bolt/blob/master/BUILD.md
-WORKDIR bolt/
+###%% Things added to get Bolt working; based on: https://github.com/dblalock/bolt/blob/master/BUILD.md
+WORKDIR /home/cbenham/bolt/
 RUN apt-get install \
 	-y \
 	build-essential \
@@ -68,12 +62,19 @@ RUN curl -fsSL https://bazel.build/bazel-release.pub.gpg | gpg --dearmor >bazel-
 	&& echo "deb [arch=amd64 signed-by=/usr/share/keyrings/bazel-archive-keyring.gpg] https://storage.googleapis.com/bazel-apt stable jdk1.8" | sudo tee /etc/apt/sources.list.d/bazel.list \
 	&& sudo apt update && sudo apt install bazel
 
+#How to Git clone in Docker?
+#TODO: should be my branch to clone; but then need git creds. For now just using on same volume as repos already exist on
+RUN git clone https://github.com/pytorch/extension-script.git
+# RUN git clone https://github.com/dblalock/bolt.git 
+COPY . /home/cbenham/bolt
+
 #Bolt packages
 RUN conda install --file requirements.txt 
 
 #Use build script
-RUN ./build.sh \
-	&& source venv/bin/activate \
+RUN . ~/.bashrc \
+	&& ./build.sh \ 
+#	&& source venv/bin/activate \
 	&& pytest tests \
 	&& cd cpp/build-bolt \
 	&& ./bolt amm*
