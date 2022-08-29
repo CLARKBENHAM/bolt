@@ -3,3 +3,5 @@ scikit-learn
 Cython
 pytest
 setuptools
+jupyter  
+notebook

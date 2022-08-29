@@ -23,26 +23,24 @@ RUN wget https://repo.continuum.io/miniconda/Miniconda3-latest-Linux-x86_64.sh -
 
 # Symlink the Miniconda activation script to /activate
 RUN ln -s ~/local/miniconda/bin/activate /activate
-#Change python to 3.7
-RUN . /activate && conda install python=3.7
+# For conda 
+ENV PATH=$PATH:/root/local/miniconda/bin/  
 # Install PyTorch
 RUN . /activate && \
+	#Change python to 3.7
+	conda install python=3.7 && \
   conda install  -c pytorch-nightly cpuonly && \
-  conda install  -c pytorch-nightly pytorch 
+  conda install  -c pytorch-nightly pytorch  && \
+	conda init bash 
 
 # Download LibTorch
 RUN wget https://download.pytorch.org/libtorch/nightly/cpu/libtorch-shared-with-deps-latest.zip
 RUN unzip libtorch-shared-with-deps-latest.zip && rm libtorch-shared-with-deps-latest.zip
 
-# Get conda working
-ENV PATH=$PATH:/root/local/miniconda/bin/  
-#. bashrc unnessiary
-RUN conda init bash 
-
 ###########################Clark Added Below
 
 #How to Git clone in Docker?
-#TODO: should be my branch to clone; but then need git crreds
+#TODO: should be my branch to clone; but then need git creds. For now just using on same volume as repos already exist on
 RUN git clone https://github.com/pytorch/extension-script.git
 RUN git clone https://github.com/dblalock/bolt.git 
 
@@ -67,9 +65,8 @@ RUN curl -fsSL https://bazel.build/bazel-release.pub.gpg | gpg --dearmor >bazel-
 	&& sudo apt update && sudo apt install bazel
 
 #Bolt packages
-RUN head -1 /dev/random
 RUN conda install --file requirements.txt 
-#install kmc2 
+#install kmc2 for setup
 RUN cd .. \
 	&& git clone -b mneilly/cythonize https://github.com/mneilly/kmc2.git \
 	&& cd kmc2 \
@@ -78,4 +75,9 @@ RUN cd .. \
 # && pytest tests/ 
 #Note: 1 test currently fails
 
+# Build C++
+RUN mkdir -p cpp/build-bolt \
+	&& cd cpp/build-bolt \
+	&& cmake .. \
+	&& make -j4
 RUN cd cpp && bazel run :main
