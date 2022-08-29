@@ -36,5 +36,5 @@
       ]
     }
   },
-  "forwardPorts": [3000]
+	"workspaceFolder": "./extension-script-bolt.code-workspace"
 }
