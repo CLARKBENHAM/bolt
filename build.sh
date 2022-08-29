@@ -3,7 +3,7 @@
 MYNAME=${0##*/}
 MYPATH=$(pwd -P)
 
-(cd docker && docker build -t bolt .)
+#(cd docker && docker build -t bolt .)
 
 # Create virtual environment
 

@@ -2,6 +2,8 @@ cmake_minimum_required(VERSION 3.3 FATAL_ERROR)
 
 project(bolt CXX)
 
+find_package(PkgConfig)
+pkg_search_module(Eigen3 REQUIRED eigen3)
 find_package(Eigen3 REQUIRED)
 
 set(sourceFiles

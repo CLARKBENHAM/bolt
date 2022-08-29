@@ -151,7 +151,7 @@ setup(
     install_requires=[
         'numpy',
         'scikit-learn',
-        #'kmc2'
+				#'kmc2' #install from patched repo:  https://github.com/mneilly/kmc2.git
         # 'sphinx_rtd_theme'  # for docs
     ],
     extras_require={
