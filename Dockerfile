@@ -95,39 +95,3 @@ RUN . ~/.bashrc \
 	#&& ./bolt amm* 
 
 RUN cd cpp && bazel run :main
-
-#Manual setup
-##Build python package, needs external kmc2
-#RUN cd .. \
-#	&& git clone -b mneilly/cythonize https://github.com/mneilly/kmc2.git \
-#	&& cd kmc2 \
-#	&& . ~/.bashrc \
-#	&& cd ../bolt \
-#	&& EIGEN_INCLUDE_DIR=/usr/include/eigen3 python setup.py install \
-#	&& pytest tests/ 
-##Note: 1 test currently fails
-#
-##Build C++
-#RUN  cd cpp \
-#  && mkdir build-bolt \
-#  && cd build-bolt \
-#  && cmake .. \
-#  && make \
-#  && ./bolt amm*
-
-## Build C++: taken from ./build.sh
-#RUN	git submodule update --init \
-#	&& pip install -r requirements.txt \
-#	&& pip install ./third_party/kmc2 \
-#	&& . ~/.bashrc \
-#	&& python setup.py install \
-#	&& mkdir -p cpp/build-bolt \
-#	&& cd cpp/build-bolt \
-#	&& cmake .. \
-#	&& make -j4
-#
-# RUN printf 'cmake_minimum_required(VERSION 3.3 FATAL_ERROR)\n\nproject(bolt CXX)\n\nfind_package(PkgConfig)\npkg_search_module(Eigen3 REQUIRED eigen3)\nfind_package(Eigen3 REQUIRED)\n\nset(sourceFiles\n  ${CMAKE_SOURCE_DIR}/src/quantize/bolt.cpp\n  ${CMAKE_SOURCE_DIR}/src/quantize/mithral.cpp\n  ${CMAKE_SOURCE_DIR}/src/utils/avx_utils.cpp\n  ${CMAKE_SOURCE_DIR}/test/main.cpp\n  ${CMAKE_SOURCE_DIR}/test/quantize\n  ${CMAKE_SOURCE_DIR}/test/test_avx_utils.cpp\n  ${CMAKE_SOURCE_DIR}/test/quantize/profile_amm.cpp\n  #${CMAKE_SOURCE_DIR}/test/quantize/profile_amm_old.cpp\n  ${CMAKE_SOURCE_DIR}/test/quantize/profile_bolt.cpp\n  ${CMAKE_SOURCE_DIR}/test/quantize/profile_encode.cpp\n  ${CMAKE_SOURCE_DIR}/test/quantize/profile_lut_creation.cpp\n  ${CMAKE_SOURCE_DIR}/test/quantize/profile_multicodebook.cpp\n  ${CMAKE_SOURCE_DIR}/test/quantize/profile_pq.cpp\n  ${CMAKE_SOURCE_DIR}/test/quantize/profile_scan.cpp\n  ${CMAKE_SOURCE_DIR}/test/quantize/test_bolt.cpp\n  ${CMAKE_SOURCE_DIR}/test/quantize/test_mithral.cpp\n  ${CMAKE_SOURCE_DIR}/test/quantize/test_multicodebook.cpp\n  )\n\nset(headerFiles\n  ${CMAKE_SOURCE_DIR}/src/include/public.hpp\n  ${CMAKE_SOURCE_DIR}/src/quantize/bolt.hpp\n  ${CMAKE_SOURCE_DIR}/src/quantize/mithral.hpp\n  ${CMAKE_SOURCE_DIR}/src/quantize/mithral_v1.hpp\n  ${CMAKE_SOURCE_DIR}/src/quantize/multi_codebook.hpp\n  ${CMAKE_SOURCE_DIR}/src/quantize/multisplit.hpp\n  ${CMAKE_SOURCE_DIR}/src/quantize/product_quantize.hpp\n  ${CMAKE_SOURCE_DIR}/src/utils/avx_utils.hpp\n  ${CMAKE_SOURCE_DIR}/src/utils/bit_ops.hpp\n  ${CMAKE_SOURCE_DIR}/src/utils/debug_utils.hpp\n  ${CMAKE_SOURCE_DIR}/src/utils/eigen_utils.hpp\n  ${CMAKE_SOURCE_DIR}/src/utils/memory.hpp\n  ${CMAKE_SOURCE_DIR}/src/utils/nn_utils.hpp\n  ${CMAKE_SOURCE_DIR}/src/utils/timing_utils.hpp\n  ${CMAKE_SOURCE_DIR}/test/external/catch.hpp\n  ${CMAKE_SOURCE_DIR}/test/quantize/amm_common.hpp\n  ${CMAKE_SOURCE_DIR}/test/quantize/profile_amm.hpp\n  ${CMAKE_SOURCE_DIR}/test/quantize/test_bolt.hpp\n  ${CMAKE_SOURCE_DIR}/test/testing_utils/testing_utils.hpp\n  )\n\nadd_executable(bolt ${sourceFiles} ${headerFiles})\n#add_library(bolt SHARED ${sourceFiles} ${headerFiles})\nset_target_properties(bolt PROPERTIES LINKER_LANGUAGE CXX)\ntarget_compile_definitions(bolt PRIVATE "-DBLAZE")\ntarget_link_libraries(bolt Eigen3::Eigen)\ntarget_include_directories(bolt PUBLIC ${CMAKE_SOURCE_DIR})\nset(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -std=c++14 -march=native -fno-rtti -ffast-math")' > cpp/CMakeLists.txt
-#RUN mkdir -p cpp/build-bolt \
-#	&& cd cpp/build-bolt \
-#	&& cmake -DCMAKE_PREFIX_PATH=/libtorch .. \
-#	&& make -j4
