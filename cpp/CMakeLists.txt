@@ -2,9 +2,17 @@ cmake_minimum_required(VERSION 3.3 FATAL_ERROR)
 
 project(bolt CXX)
 
-find_package(PkgConfig)
-pkg_search_module(Eigen3 REQUIRED eigen3)
-find_package(Eigen3 REQUIRED)
+#find_package(Eigen3 REQUIRED)
+#find_package(PkgConfig)
+#pkg_search_module(Eigen3 REQUIRED eigen3)
+#INCLUDE_DIRECTORIES( "/usr/lib/cmake/eigen3")
+#INCLUDE_DIRECTORIES( "/home/cbenham/eigen-3.3.8/cmake/UseEigen3.cmake")
+find_package(Eigen3 3.3 REQUIRED)
+INCLUDE_DIRECTORIES( "/home/cbenham/build_dir_eigen")
+
+
+#find_package(Eigen3 REQUIRED)
+#find_package (Eigen3 3 REQUIRED)
 
 set(sourceFiles
   ${CMAKE_SOURCE_DIR}/src/quantize/bolt.cpp
