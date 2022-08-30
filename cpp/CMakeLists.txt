@@ -2,6 +2,7 @@ cmake_minimum_required(VERSION 3.3 FATAL_ERROR)
 
 project(bolt CXX)
 
+INCLUDE_DIRECTORIES ( "$ENV{EIGEN3_INCLUDE_DIR}" )
 find_package(PkgConfig)
 pkg_search_module(Eigen3 REQUIRED eigen3)
 find_package(Eigen3 REQUIRED)

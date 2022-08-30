@@ -40,11 +40,12 @@ RUN unzip libtorch-shared-with-deps-latest.zip && rm libtorch-shared-with-deps-l
 ###########################Clark Added Below
 
 ###%% Things added to get Bolt working; based on: https://github.com/dblalock/bolt/blob/master/BUILD.md
-WORKDIR /home/cbenham/bolt/
 RUN apt-get install \
 	-y \
+	apt-utils \
 	build-essential \
 	clang-3.9 \
+	clang \
 	libc++-dev \
 	libeigen3-dev \
 	swig \
@@ -64,16 +65,27 @@ RUN curl -fsSL https://bazel.build/bazel-release.pub.gpg | gpg --dearmor >bazel-
 
 #How to Git clone in Docker?
 #TODO: should be my branch to clone; but then need git creds. For now just using on same volume as repos already exist on
-RUN git clone https://github.com/pytorch/extension-script.git
+RUN cd  && git clone https://github.com/pytorch/extension-script.git 
 # RUN git clone https://github.com/dblalock/bolt.git 
-COPY . /home/cbenham/bolt
 
 #Bolt packages
+WORKDIR /home/cbenham/bolt/
+COPY requirements.txt /home/cbenham/bolt/requirements.txt 
 RUN conda install --file requirements.txt 
+COPY . /home/cbenham/bolt
+
+#Installed eigen: had to manually build as well as install(?!)
+RUN cd .. \
+	&& curl -L https://gitlab.com/libeigen/eigen/-/archive/3.3.8/eigen-3.3.8.tar > eigen-3.3.8.tar \
+	&& tar -xf eigen-3.3.8.tar \
+	&& mkdir build_dir_eigen \
+	&& cd build_dir_eigen  \
+	&& cmake ../eigen-3.3.8 \
+	&& make install
 
 #Use build script
 RUN . ~/.bashrc \
-	&& ./build.sh \ 
+	&& . ./build.sh \ 
 #	&& source venv/bin/activate \
 	&& pytest tests \
 	&& cd cpp/build-bolt \
