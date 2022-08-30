@@ -17,7 +17,7 @@ MYPATH=$(pwd -P)
 
 git submodule update --init
 #pip install -r requirements.txt
-#pip install ./third_party/kmc2
+pip install ./third_party/kmc2
 ## pip install --use-feature=in-tree-build -r requirements.txt
 ## pip install --use-feature=in-tree-build ./third_party/kmc2
 ## pip install . # doesn't work due to custom install command
@@ -33,5 +33,5 @@ EIGEN_INCLUDE_DIR=/usr/include/eigen3 python setup.py install
 
 mkdir -p cpp/build-bolt
 cd cpp/build-bolt
-cmake ..
+EIGEN_INCLUDE_DIR=/usr/include/eigen3  cmake ..
 make -j4
