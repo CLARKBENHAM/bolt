@@ -2,6 +2,7 @@
 
 import os
 import numpy as np
+#from sklearn.datasets.samples_generator import make_blobs
 from sklearn.datasets.samples_generator import make_blobs
 
 from joblib import Memory

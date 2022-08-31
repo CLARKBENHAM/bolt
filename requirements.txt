@@ -5,3 +5,7 @@ pytest
 setuptools
 jupyter  
 notebook
+matplotlib
+seaborn
+
+
