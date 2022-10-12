@@ -1,11 +1,11 @@
 {
   "folders": [
-	{
-		"path": "../extension-script"
-	},
-	{
-		"path": "."
-	}
-],
+		{
+			"path": "."
+		},
+		{
+			"path": "../extension-script"
+		}
+	],
   "settings": {}
 }
