@@ -6,13 +6,13 @@ from python import vquantizers as vq
 
 if __name__ == '__main__':
 
-        N = 128
+        N = 64
         D = 128
-        M = 128
+        M = 32
         codebooks = 16
 
-        X = np.random.randint(100, size=(N, D))
-        Q = np.random.randint(100, size=(D, M))
+        X = np.random.randint(100, size=(N, D)) 
+        Q = np.random.randint(100, size=(D, M)) 
 
         task = vq.MithralEncoder(codebooks)
 
@@ -29,5 +29,10 @@ if __name__ == '__main__':
 
         W_real = np.matmul(X, Q)
         mse = np.square(W - W_real).mean()
-        print("mse: ", mse)
+        ms = np.square(W_real).mean()
+        print("mse: ", mse, "; % variance off: ", 100*mse/ms)
         print("offset: ", np.abs(W - W_real))
+        print("\n\n")
+        print(W, W_real, sep="\n")
+
+
