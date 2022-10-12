@@ -6,10 +6,10 @@ from python import vquantizers as vq
 
 if __name__ == '__main__':
 
-        N = 64
-        D = 128
-        M = 32
-        codebooks = 16
+        N = 128 
+        D = 128 
+        M = 128 
+        codebooks = 32
 
         X = np.random.randint(100, size=(N, D)) 
         Q = np.random.randint(100, size=(D, M)) 
