@@ -14,7 +14,8 @@ import sys
 
 import sklearn
 # from sklearn.model_selection import StratifiedKFold
-from files import ensure_dir_exists
+#from files import ensure_dir_exists
+from .files import ensure_dir_exists
 
 try:
     from joblib import Memory

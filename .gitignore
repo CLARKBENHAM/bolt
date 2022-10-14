@@ -110,6 +110,10 @@ docs/
 
 # Experiment Output
 output/
+experiments/results/amm/*
+
+#Experiment Input
+experiments/assets
 
 # joblib cache
 joblib/
