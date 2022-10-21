@@ -17,7 +17,7 @@
 
 // #define MITHRAL_USE_BOLT_SAFE_SCAN // way slower, but exact sum of uint8s
 
-#define BLAZE
+#define BLAZE  //needed for Pybind11
 #ifdef BLAZE
     #include "src/utils/avx_utils.hpp"
     #include "src/utils/eigen_utils.hpp"
@@ -33,8 +33,8 @@
 #endif
 
 // Testing pybind
-int add(int i, int j);
 int sub(int i, int j);
+int add(int i, int j);
 // ================================================================ in cpp
 // these should be the only functions you have to call
 

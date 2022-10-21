@@ -28,3 +28,23 @@ cc_library(
     copts = ['-O3', '-march=native', '-mavx', '-ffast-math', '-std=c++14'],
     defines = ['BLAZE', 'NDEBUG'],
 )
+
+load("@pybind11_bazel//:build_defs.bzl", "pybind_extension")
+
+pybind_extension(
+    name = "pybind11_wrapper",  # This name is not actually created!
+    srcs = ["pybind11_wrapper.cpp"],
+)
+
+py_library(
+    name = "pybind11_wrapper",
+    data = [":pybind11_wrapper.so"],
+)
+
+py_test(
+    name = "example_test",
+    srcs = ["example_test.py"],
+    deps = [
+        ":pybind11_wrapper"
+    ],
+)
