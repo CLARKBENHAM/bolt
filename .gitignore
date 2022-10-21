@@ -127,3 +127,5 @@ figs/
 _results/
 notes.txt
 .env
+experiments/results_amm_main.txt
+experiments/results_amm_main2.txt

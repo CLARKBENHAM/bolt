@@ -9,3 +9,5 @@ notebook
 matplotlib
 jupyter  
 Cython
+invoke
+pybind11
