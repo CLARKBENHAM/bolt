@@ -3,7 +3,7 @@
 
 namespace py = pybind11;
 
-PYBIND11_MODULE(pybind11_example, m) {
+PYBIND11_MODULE(pybind11_wrapper, m) {
     m.doc() = "pybind11 example plugin"; // Optional module docstring
     
     m.def("add", &add, "A function that adds two numbers");

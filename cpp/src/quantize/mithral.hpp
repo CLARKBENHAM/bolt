@@ -17,7 +17,7 @@
 
 // #define MITHRAL_USE_BOLT_SAFE_SCAN // way slower, but exact sum of uint8s
 
-#define BLAZE  //needed for Pybind11
+// #define BLAZE  //needed for Pybind11
 #ifdef BLAZE
     #include "src/utils/avx_utils.hpp"
     #include "src/utils/eigen_utils.hpp"
