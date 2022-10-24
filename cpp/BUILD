@@ -31,30 +31,23 @@ cc_library(
     defines = ['BLAZE', 'NDEBUG'],
 )
 
-cc_library(
-    name = "add",
-    srcs = ['src/quantize/add.cpp'],
-    hdrs = glob(['src/*.hpp']) + glob(['src/*/*.hpp']) + glob(['src/external/eigen/**']),
-    copts = ['-O3', '-march=native', '-mavx', '-ffast-math', '-std=c++14'],
-)
-
 pybind_extension(
-    name = "pybind11_wrapper",  # This name is not actually created!
-    srcs = ["pybind11_wrapper.cpp"],
+    name = "mithral_wrapped",  # This name is not actually created!
+    srcs = ["mithral_wrapped.cpp"],
     deps=[":mithral"], #works with :mithral but not :main?
     copts = ['-O3', '-march=native', '-mavx', '-ffast-math', '-std=c++14'],
 )
 
 py_library(
-    name = "pybind11_wrapper",
-    data = [":pybind11_wrapper.so"],
+    name = "mithral_wrapped",
+    data = [":mithral_wrapped.so"],
 )
 
 py_test(
     name = "example_test",
     srcs = ["example_test.py"],
     deps = [
-        ":pybind11_wrapper"
+        ":mithral_wrapped"
     ],
 )
 

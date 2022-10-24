@@ -5,7 +5,10 @@ namespace py = pybind11;
 
 PYBIND11_MODULE(my_pb_mod, m) {
   m.doc() = "pybind11 example plugin"; // Optional module docstring
-	
+
+	// Need to import all types or just the encoding functions?
+
+	// test binding	
   m.def("add", &add, "A function that adds two numbers");
   m.def("sub", &sub, "A function that subs two numbers");
 	}

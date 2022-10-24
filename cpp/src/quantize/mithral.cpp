@@ -12,7 +12,7 @@ int sub(int i, int j) {
     return i - j;
 }
 int add(int i, int j) {
-    return i + j;
+    return i + j; // + pow(10,8);
 }
 // ================================================================ encode
 

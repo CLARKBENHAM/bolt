@@ -224,7 +224,7 @@ class MultiCodebookEncoder(abc.ABC):
     def dists_enc(self, X_enc, Q_luts, unquantize=True,
                   offset=None, scale=None):
         X_enc = np.ascontiguousarray(X_enc)
-
+        
         if unquantize:
             offset = self.total_lut_offset if offset is None else offset
             scale = self.scale_by if scale is None else scale
