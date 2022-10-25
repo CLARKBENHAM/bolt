@@ -2,7 +2,8 @@ load("@pybind11_bazel//:build_defs.bzl", "pybind_extension")
 
 cc_binary(
     name = "main",
-    srcs = ['test/main.cpp'] + glob(['test/*/*.hpp']) + glob(['test/quantize/test*.cpp']), # + glob(["test/external/catch.hpp"]) +
+    #includes profile_amm.cpp for timing tests
+    srcs = ['test/main.cpp'] + glob(['test/*/*.hpp']) + glob(['test/quantize/test*.cpp']) + ['test/quantize/profile_amm.cpp'] + glob(["src/utils/avx_utils.*"]),   #, # + glob(["test/external/catch.hpp"]) +
     deps = [':bolt', ':testing_utils', ':mithral'], 
     copts = ['-O3', '-march=native', '-mavx', '-ffast-math', '-std=c++14'],
     defines = ['BLAZE', 'NDEBUG'],

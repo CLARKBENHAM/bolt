@@ -13,8 +13,14 @@
 #endif
 
 TEST_CASE("amm mithral", "[amm][matmul][mithral][profile]") {
+    // ISSUE: These aren't getting included in catch build, or aren't getting run
+    REQUIRE(1 == 8);
      std::vector<int> ncodebooks {2, 4, 8, 16, 32, 64};
      std::vector<float> lutconsts {-1, 1, 2, 4};
+     std::cout << "Breakpoint here?"; 
+     CAPTURE("will catch2 print this?");
+     WARN("will warn catch2 print this?");
+     FAIL("will fail catch2 print this?");
      _profile_mithral<int8_t>(kCaltechTaskShape0, ncodebooks, lutconsts);
      _profile_mithral<int8_t>(kCaltechTaskShape1, ncodebooks, lutconsts);
      _profile_mithral(kCaltechTaskShape0, ncodebooks, lutconsts);

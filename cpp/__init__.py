@@ -1,4 +1,4 @@
-import os  #it only works if run in cpp/ first to create the symlink then it exists elsewhere
+import os  
 try:
 	os.symlink("./bazel-bin/mithral_wrapped.so", "mithral_wrapped.so")
 except Exception as e:

@@ -7,6 +7,7 @@ import pprint
 import scipy
 import time
 from timeit import default_timer as timer
+from sklearn.metrics import r2_score
 
 import cpp
 
@@ -36,15 +37,15 @@ def mult1(X, Q, codebooks):
     return W
 
 
-def compare(X, Q, W):
+def compare(X, W, Y_hat):
     #print("W: ", W)
     print("-----")
 
-    W_real = np.matmul(X, Q)
-    mse = np.square(W - W_real).mean()
-    ms = np.square(W_real).mean()  - np.mean(W_real)**2
+    Y_real = np.matmul(X, W)
+    mse = np.square(Y_hat - Y_real).mean()
+    ms = np.mean(Y_real**2)  - np.mean(Y_real)**2
     print("mse: ", mse, "; 1-R^2: ", mse/ms)
-    print("offset: ", np.abs(W - W_real))
+    #print("offset: ", np.abs(Y_hat - Y_real))
     #print("\n\n")
     #print(W, W_real, sep="\n")
 
@@ -86,27 +87,36 @@ def mult2():
 
 
 def manual_mult_mithral():
-    """20x speedup and 0.2% error on random vecs; 50x speedup for n=12800,M=1280"""
+    """on random vecs: 
+        for n=12800,M=1280: 20x speedup and R^2 1%
+        """
     hparams_dict = {'ncodebooks': 8, 'lut_work_const': -1}
+    hparams_dict = {'ncodebooks': 64, 'lut_work_const': -1}
     # Timeit in Python
-    N = 1280
-    D = 128
-    M = 1280
+    N = 2048
+    D = 2048
+    M = 2048
     X = np.random.randint(100, size=(N, D))
     W = np.random.randint(100, size=(D, M))
     # X_train, X_test= X[:,:D*3//4], X[:,D*3//4:]
     W_train, W_test = W[:, :M*3//4], W[:, M*3//4:]
     est3 = vq_amm.MithralMatmul(**hparams_dict)
-    s = timer()
     est3.fit(X, W_train)
+    s = timer()
+    Y_hat = est3.predict(X, W_test)
     m = timer()
     Y = X@W_test
     e = timer()
-    Y_hat = est3.predict(X, W_test)
-    print(np.mean(np.abs(Y_hat-Y)**2)/(np.mean(Y**2)-np.mean(Y)**2),
-          f"% Faster: {(e-m)/(m-s)*100}")
-
-
+    new_t=m-s
+    old_t = e-m
+    print("1-R^2: ", np.mean((Y_hat-Y)**2)/(np.mean(Y**2)-np.mean(Y)**2),
+          f"New way Times Faster: {old_t/new_t}")
+    compare(X, W_test, Y_hat)
+    #Y_hat=Y_hat.flatten() 
+    #Y=Y.flatten() 
+    #print("1-R^2: ", 1-r2_score(Y,Y_hat))
+    
+    
 def mult_mithral():
     method_id = 'Mithral'
     # guess
@@ -122,8 +132,14 @@ def mult_mithral():
     # y=X@W. #  np.mean(np.abs(Y_hat-task.X_test@task.W_test)**2)/np.mean(np.abs(Y_hat)**2)
     # I assume X is the constant matrix _A in class and B gets encoded each time?
     est.fit(task.X_train, task.W_train, task.Y_train)  # This fit doesn't use Y
+    s = timer()
     Y_hat = est.predict(task.X_test, task.W_test)
+    m = timer()
+    Y = task.X_test @ task.W_test
+    e = timer()
     print(amm_main._compute_metrics(task, Y_hat))
+    print(np.mean((Y_hat-Y)**2)/(np.mean(Y**2)-np.mean(Y)**2),
+          f"Times Faster: {(e-m)/(m-s)}")
 
     # Extract Splits and other Hparams
     est2 = vq_amm.MithralMatmul(**hparams_dict)
@@ -132,7 +148,7 @@ def mult_mithral():
                                 est.__dict__.items()))
     Y_hat2 = est2.predict(task.X_test, task.W_test)
     print(amm_main._compute_metrics(task, Y_hat2))
-    print(np.mean(np.abs(Y_hat-Y_hat2)**2))
+    print(np.mean((Y_hat-Y_hat2)**2))
     # step into
     Y_hat2 = est2.predict(task.X_test, task.W_test)
     compare(task.X_test, task.W_test, Y_hat2)
@@ -147,8 +163,8 @@ def mult_mithral():
     Y = task.X_test@task.W_test
     e = timer()
     compare(task.X_test, task.W_test, out)
-    print(np.mean(np.abs(out-Y)**2)/(np.mean(Y**2)-np.mean(Y)**2),
-          f"% Faster: {(e-m)/(m-s)*100}")
+    print(np.mean((out-Y)**2)/(np.mean(Y**2)-np.mean(Y)**2),
+          f"Times Faster: {(e-m)/(m-s)}")
     # Fit C++ to these splits 
     # "you'd have to generate the split thresholds, split values, and prototypes in python and pass them to C++."  
     # mithral_encode Looking for: splitdims and all_splitvals

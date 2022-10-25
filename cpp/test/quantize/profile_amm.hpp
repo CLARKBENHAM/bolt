@@ -12,9 +12,11 @@
 #ifdef BLAZE
     #include "test/quantize/amm_common.hpp"
     #include "src/external/eigen/Eigen/SparseCore"
+//    #include "src/utils/avx_utils.hpp" // uses functions from here but don't need to import avx_utils here. DO need to add avx_utils* to bazel build.
 #else
     #include "amm_common.hpp"
     #include "SparseCore"
+//    #include "avx_utils.hpp"
 #endif
 
 struct MatmulTaskShape { int N, D, M; const char* name; };
