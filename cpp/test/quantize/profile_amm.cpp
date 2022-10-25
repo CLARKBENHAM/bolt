@@ -8,8 +8,10 @@
 
 #ifdef BLAZE
     #include "test/quantize/profile_amm.hpp"
+    #include "test/external/catch.hpp"
 #else
     #include "profile_amm.hpp"
+    #include "catch.hpp"
 #endif
 
 TEST_CASE("amm mithral", "[amm][matmul][mithral][profile]") {
