@@ -93,14 +93,14 @@ def manual_mult_mithral():
         new way:
         On GPT3 sized params (12288, 50527, 2048) 64 codebooks: R2: 53% 8x faster  
 
-        I must be encoding the wrong thing? What changed?
+        I must be encoding the wrong thing? What changed?  Don't think I encoded things wrong, I was computing speedup wrong
         """
     hparams_dict = {'ncodebooks': 8, 'lut_work_const': -1}
     hparams_dict = {'ncodebooks': 64, 'lut_work_const': -1}
     # Timeit in Python
-    N = 12288 #2048
-    D = 50257 #2048
-    M = 2048
+    N = 4096
+    D = 16
+    M = 128
     X = np.random.randint(100, size=(N, D))
     W = np.random.randint(100, size=(D, M))
     # X_train, X_test= X[:,:D*3//4], X[:,D*3//4:]
@@ -125,7 +125,8 @@ def manual_mult_mithral():
 def mult_mithral():
     method_id = 'Mithral'
     # guess
-    hparams_dict = {'ncodebooks': 8, 'lut_work_const': -1} #fast for tests. 11% test error
+    hparams_dict = {'ncodebooks': 8, 'lut_work_const': -1} #fast for tests. 1% test error
+    #hparams_dict = {'ncodebooks': 4, 'lut_work_const': -1} #slower to train. 3% error rate, 30x slower than original way
     #hparams_dict = {'ncodebooks': 16, 'lut_work_const': -1} #1% test error MSE, 7x faster
     #hparams_dict = {'ncodebooks': 64, 'lut_work_const': -1} 
 
@@ -199,8 +200,8 @@ def mult_mithral():
     # compare(X, Q, out)
     
 if __name__ == '__main__':
-    manual_mult_mithral()
-        
+    #manual_mult_mithral()
+    
     N = 128
     D = 128
     M = 128
@@ -211,6 +212,7 @@ if __name__ == '__main__':
 
     # W1 = mult1(X, Q, codebooks)
     # compare(X, Q, W1)
+    print('starting')
     mult_mithral()
     
     

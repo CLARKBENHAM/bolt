@@ -22,11 +22,12 @@
 
 int main(int argc, char *const argv[]) {
     //hacks since can't get gdb working with catch tests
-    std::vector<int> ncodebooks {2, 4, 8, 16, 32, 64};
+    std::vector<int>    ncodebooks {2, 4, 8, 16, 32, 64};
     std::vector<float> lutconsts {-1, 1, 2, 4};
     std::cout << "Breakpoint here?\n"; 
+    // If it's defined inside namespace how is this called?
     _profile_mithral<int8_t>(kCaltechTaskShape0, ncodebooks, lutconsts);
-    std::cout << "ENDED\n"; 
+    std::cout << "ENDED\n\n\n\n"; 
     //_profile_mithral<int8_t>(kCaltechTaskShape1, ncodebooks, lutconsts);
     //_profile_mithral(kCaltechTaskShape0, ncodebooks, lutconsts);
     

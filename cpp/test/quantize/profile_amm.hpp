@@ -43,7 +43,7 @@ namespace {
 // ================================================================ mithral
 
 template<class InputT>
-struct mithral_amm_task {
+struct mithral_amm_task { // Class which all data uses. Copy this one. 
     using traits = mithral_input_type_traits<InputT>;
     using scale_t = typename traits::encoding_scales_type;
     using offset_t = typename traits::encoding_offsets_type;
@@ -52,7 +52,7 @@ struct mithral_amm_task {
     static constexpr int ncentroids = 16;
     static constexpr int nsplits_per_codebook = 4;
     static constexpr int max_splitvals = 1 << 4;
-
+    
     mithral_amm_task(int N, int D, int M, int ncodebooks,
                      float lut_work_const):
         N_padded(N % scan_block_nrows == 0 ? N :
@@ -69,7 +69,7 @@ struct mithral_amm_task {
         amm(N_padded, D, M, ncodebooks, centroids.data(),
             splitdims.data(), splitvals.data(),
             encode_scales.data(), encode_offsets.data(),
-            idxs.data(), nnz_per_centroid),
+            idxs.data(), nnz_per_centroid), //mithral_amm type
         X(N_padded, D),
         Q(D, M)
     {
@@ -135,12 +135,14 @@ struct mithral_amm_task {
     ColMatrix<float> Q;
 };
 
+// Below called by other _profile_mithral. The dataset called in main.cpp is a convienence struct to hold dset_name, N, D, M
 template<class InputT=float>
 void _profile_mithral(const char* dset_name, uint32_t N, uint32_t D, uint32_t M,
                       int ncodebooks, float lut_work_const=2)
 {
     if ((lut_work_const > 0) && (lut_work_const > ncodebooks)) { return; }
-    mithral_amm_task<InputT> task(N, D, M, ncodebooks, lut_work_const);
+    // Where all task info is added. 
+    mithral_amm_task<InputT> task(N, D, M, ncodebooks, lut_work_const); 
 
     // mithral_amm_task<InputT> task_dense(N, D, M, ncodebooks, -1);
 
@@ -149,6 +151,7 @@ void _profile_mithral(const char* dset_name, uint32_t N, uint32_t D, uint32_t M,
 
     // auto fmt = "%7s, %3s, %22s, N, D, M, C, lut_work_coef:\t"
     //         "%6d, %3d, %3d, %2d, %.1f\t";
+    // This is just metadata to printout nice
     auto fmt_as_cppstring = string_with_format(
         "%s, %-3s, %%-22s, N D M C lut_work_coef:,"
         "%6d, %3d, %3d, %2d, %4.1f,\t", dset_name, dtype_str,
@@ -160,16 +163,20 @@ void _profile_mithral(const char* dset_name, uint32_t N, uint32_t D, uint32_t M,
     if (lut_work_const < 0) { // dense centroids
         msg = string_with_format(fmt, "amm mithral nolut");
         std::cout << "MSG: " + msg + "    END\n";
+        //std::cout << "EXPR: " + task.run_matmul(false) + "    END\n";
         REPEATED_PROFILE_DIST_COMPUTATION(kNreps, msg, kNtrials,
             task.output().data(), task.output().size(),
             task.run_matmul(false));
         msg = string_with_format(fmt, "amm mithral denselut");
         std::cout << "MSG: " + msg + "    END\n";
+        // std::cout << "EXPR: " + *task.run_matmul(true) + "    END\n";
+
         REPEATED_PROFILE_DIST_COMPUTATION(kNreps, msg, kNtrials,
             task.output().data(), task.output().size(),
             task.run_matmul(true));
         msg = string_with_format(fmt, "mithral lut dense");
         std::cout << "MSG: " + msg + "    END\n";
+        // std::cout << "EXPR: " + task.lut() + "    END\n";
         REPEATED_PROFILE_DIST_COMPUTATION(kNreps, msg, kNtrials,
             task.output().data(), task.output().size(),
             task.lut());
@@ -740,5 +747,5 @@ void _profile_sparse_amm(std::vector<int> dvals, std::vector<float> nnz_fracs,
     }
 }
 
-} // anonymous namespace
+} // anonymous namespace, then how is it being called by main?
 #endif /* profile_amm_h */
