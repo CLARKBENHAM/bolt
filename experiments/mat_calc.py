@@ -88,13 +88,18 @@ def mult2():
 
 def manual_mult_mithral():
     """on random vecs: 
+        old way:
         for n=12800,M=1280: 20x speedup and R^2 1%
+        new way:
+        On GPT3 sized params (12288, 50527, 2048) 64 codebooks: R2: 53% 8x faster  
+
+        I must be encoding the wrong thing? What changed?
         """
     hparams_dict = {'ncodebooks': 8, 'lut_work_const': -1}
     hparams_dict = {'ncodebooks': 64, 'lut_work_const': -1}
     # Timeit in Python
-    N = 2048
-    D = 2048
+    N = 12288 #2048
+    D = 50257 #2048
     M = 2048
     X = np.random.randint(100, size=(N, D))
     W = np.random.randint(100, size=(D, M))
@@ -194,7 +199,8 @@ def mult_mithral():
     # compare(X, Q, out)
     
 if __name__ == '__main__':
-
+    manual_mult_mithral()
+        
     N = 128
     D = 128
     M = 128

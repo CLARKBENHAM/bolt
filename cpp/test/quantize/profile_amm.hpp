@@ -159,14 +159,17 @@ void _profile_mithral(const char* dset_name, uint32_t N, uint32_t D, uint32_t M,
 
     if (lut_work_const < 0) { // dense centroids
         msg = string_with_format(fmt, "amm mithral nolut");
+        std::cout << "MSG: " + msg + "    END\n";
         REPEATED_PROFILE_DIST_COMPUTATION(kNreps, msg, kNtrials,
             task.output().data(), task.output().size(),
             task.run_matmul(false));
         msg = string_with_format(fmt, "amm mithral denselut");
+        std::cout << "MSG: " + msg + "    END\n";
         REPEATED_PROFILE_DIST_COMPUTATION(kNreps, msg, kNtrials,
             task.output().data(), task.output().size(),
             task.run_matmul(true));
         msg = string_with_format(fmt, "mithral lut dense");
+        std::cout << "MSG: " + msg + "    END\n";
         REPEATED_PROFILE_DIST_COMPUTATION(kNreps, msg, kNtrials,
             task.output().data(), task.output().size(),
             task.lut());

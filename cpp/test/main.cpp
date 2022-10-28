@@ -14,12 +14,23 @@
 
 #ifdef BLAZE
     #include "test/external/catch.hpp"
+    #include "test/quantize/profile_amm.hpp"
 #else
     #include "catch.hpp"
+    #include "profile_amm.hpp"
 #endif
 
 int main(int argc, char *const argv[]) {
-    return Catch::Session().run(argc, argv);
+    //hacks since can't get gdb working with catch tests
+    std::vector<int> ncodebooks {2, 4, 8, 16, 32, 64};
+    std::vector<float> lutconsts {-1, 1, 2, 4};
+    std::cout << "Breakpoint here?\n"; 
+    _profile_mithral<int8_t>(kCaltechTaskShape0, ncodebooks, lutconsts);
+    std::cout << "ENDED\n"; 
+    //_profile_mithral<int8_t>(kCaltechTaskShape1, ncodebooks, lutconsts);
+    //_profile_mithral(kCaltechTaskShape0, ncodebooks, lutconsts);
+    
+    //return Catch::Session().run(argc, argv);
 }
 
 //#include <stdio.h>

@@ -16,39 +16,39 @@
 
 TEST_CASE("amm mithral", "[amm][matmul][mithral][profile]") {
     // ISSUE: These aren't getting included in catch build, or aren't getting run
-    REQUIRE(1 == 8);
-     std::vector<int> ncodebooks {2, 4, 8, 16, 32, 64};
-     std::vector<float> lutconsts {-1, 1, 2, 4};
-     std::cout << "Breakpoint here?"; 
-     CAPTURE("will catch2 print this?");
-     WARN("will warn catch2 print this?");
-     FAIL("will fail catch2 print this?");
-     _profile_mithral<int8_t>(kCaltechTaskShape0, ncodebooks, lutconsts);
-     _profile_mithral<int8_t>(kCaltechTaskShape1, ncodebooks, lutconsts);
-     _profile_mithral(kCaltechTaskShape0, ncodebooks, lutconsts);
-     _profile_mithral(kCaltechTaskShape1, ncodebooks, lutconsts);
-     _profile_mithral(kCifar10TaskShape, ncodebooks, lutconsts);
-     _profile_mithral(kCifar100TaskShape, ncodebooks, lutconsts);
-     _profile_mithral(kUcrTaskShape0, ncodebooks, lutconsts);
-     _profile_mithral(kUcrTaskShape1, ncodebooks, lutconsts);
-     _profile_mithral(kUcrTaskShape2, ncodebooks, lutconsts);
+    std::vector<int> ncodebooks {2, 4, 8, 16, 32, 64};
+    std::vector<float> lutconsts {-1, 1, 2, 4};
+    std::cout << "Breakpoint here?"; 
+    CAPTURE("will catch2 print this?");
+    WARN("will warn catch2 print this?");
+    // FAIL("will fail catch2 print this?"); //Can't use debugger if throw error
+    // REQUIRE(1 == 8);
+    _profile_mithral<int8_t>(kCaltechTaskShape0, ncodebooks, lutconsts);
+    _profile_mithral<int8_t>(kCaltechTaskShape1, ncodebooks, lutconsts);
+    _profile_mithral(kCaltechTaskShape0, ncodebooks, lutconsts);
+    _profile_mithral(kCaltechTaskShape1, ncodebooks, lutconsts);
+    _profile_mithral(kCifar10TaskShape, ncodebooks, lutconsts);
+    _profile_mithral(kCifar100TaskShape, ncodebooks, lutconsts);
+    _profile_mithral(kUcrTaskShape0, ncodebooks, lutconsts);
+    _profile_mithral(kUcrTaskShape1, ncodebooks, lutconsts);
+    _profile_mithral(kUcrTaskShape2, ncodebooks, lutconsts);
 }
 
 TEST_CASE("amm bolt", "[amm][matmul][bolt][profile]") {
-     std::vector<int> ncodebooks {2, 4, 8, 16, 32, 64};
-     _profile_bolt_amm(kCaltechTaskShape0, ncodebooks);
-     _profile_bolt_amm(kCaltechTaskShape1, ncodebooks);
-     _profile_bolt_amm(kCifar10TaskShape, ncodebooks);
-     _profile_bolt_amm(kCifar100TaskShape, ncodebooks);
-     _profile_bolt_amm(kUcrTaskShape0, ncodebooks);
-     _profile_bolt_amm(kUcrTaskShape1, ncodebooks);
-     _profile_bolt_amm(kUcrTaskShape2, ncodebooks);
+    std::vector<int> ncodebooks {2, 4, 8, 16, 32, 64};
+    _profile_bolt_amm(kCaltechTaskShape0, ncodebooks);
+    _profile_bolt_amm(kCaltechTaskShape1, ncodebooks);
+    _profile_bolt_amm(kCifar10TaskShape, ncodebooks);
+    _profile_bolt_amm(kCifar100TaskShape, ncodebooks);
+    _profile_bolt_amm(kUcrTaskShape0, ncodebooks);
+    _profile_bolt_amm(kUcrTaskShape1, ncodebooks);
+    _profile_bolt_amm(kUcrTaskShape2, ncodebooks);
 }
 
 TEST_CASE("amm linear approx matmul", "[amm][matmul][dense][linear][profile]") {
     int N, D, M;
     // std::vector<int> dvals {2, 4, 6, 8, 12, 16, 24, 32, 48, 64};
-    std::vector<int> dvals {2, 4, 8, 16, 32, 64, 128}; // TODO uncomment above
+    std::vector<int> dvals {2, 4, 8, 16, 32, 64, 128}; // TODO uncomment ebove
 
     _profile_matmul_methods(dvals, kCaltechTaskShape0);
     _profile_matmul_methods(dvals, kCaltechTaskShape1);
