@@ -51,31 +51,3 @@ py_test(
         ":mithral_wrapped"
     ],
 )
-
-##TEMP: Works with everything in Same Path
-#pybind_extension(
-#    name = "my_pb_mod",  # This name is not actually created!(?)
-#    srcs = ["my_pb_mod.cc"],
-#    deps=[":add"],
-#)
-#
-#cc_library(
-#    name = "add",
-#    srcs = ['add.cpp'],
-#    hdrs = glob(['*.hpp']),
-#    copts = ['-O3', '-march=native', '-mavx', '-ffast-math', '-std=c++14'],
-#)
-#
-#
-#py_library(
-#    name = "my_pb_mod",
-#    data = [":my_pb_mod.so"],
-#)
-#
-#py_test(
-#    name = "example_test",
-#    srcs = ["example_test.py"],
-#    deps = [
-#        ":my_pb_mod"
-#    ],
-#)

@@ -87,7 +87,8 @@
 			"random": "cpp",
 			"set": "cpp",
 			"stack": "cpp",
-			"string": "cpp"
+			"string": "cpp",
+			"sparsecore": "cpp"
 		}
 	}
 }

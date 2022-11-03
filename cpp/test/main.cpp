@@ -31,6 +31,7 @@ int main(int argc, char *const argv[]) {
     //_profile_mithral<int8_t>(kCaltechTaskShape1, ncodebooks, lutconsts);
     //_profile_mithral(kCaltechTaskShape0, ncodebooks, lutconsts);
     
+    //Commented out since don't need to run all rn
     //return Catch::Session().run(argc, argv);
 }
 
