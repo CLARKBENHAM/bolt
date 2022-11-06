@@ -34,9 +34,10 @@ cc_library(
 
 pybind_extension(
     name = "mithral_wrapped",  # This name is not actually created!
-    srcs = ["mithral_wrapped.cpp"] + glob(["test/*/*.hpp"]),
+    srcs = ["mithral_wrapped.cpp"] + glob(["test/*/*.hpp"]), 
     deps=[":mithral"], #works with :mithral but with :main can't run due to undefined symbol: _Z3addii
-    copts = ['-O3', '-march=native', '-mavx', '-ffast-math', '-std=c++14', '-ggdb'],
+    #Got eigen path w:   pkg-config --cflags-only-I eigen3 | sed 's/^-I//'
+    copts = [ '-I/usr/local/include/eigen3/','-O3', '-march=native', '-mavx', '-ffast-math', '-std=c++14', '-ggdb'],
 )
 
 py_library(

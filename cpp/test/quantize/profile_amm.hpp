@@ -69,7 +69,7 @@ struct mithral_amm_task { // Class which all data uses. Copy this one.
         amm(N_padded, D, M, ncodebooks, centroids.data(),
             splitdims.data(), splitvals.data(),
             encode_scales.data(), encode_offsets.data(),
-            idxs.data(), nnz_per_centroid), //mithral_amm type
+            idxs.data(), nnz_per_centroid), //mithral_amm type is def'd in mithral.hpp
         X(N_padded, D),
         Q(D, M)
     {
@@ -163,20 +163,17 @@ void _profile_mithral(const char* dset_name, uint32_t N, uint32_t D, uint32_t M,
     if (lut_work_const < 0) { // dense centroids
         msg = string_with_format(fmt, "amm mithral nolut");
         std::cout << "MSG: " + msg + "    END\n";
-        //std::cout << "EXPR: " + task.run_matmul(false) + "    END\n";
         REPEATED_PROFILE_DIST_COMPUTATION(kNreps, msg, kNtrials,
             task.output().data(), task.output().size(),
             task.run_matmul(false));
         msg = string_with_format(fmt, "amm mithral denselut");
         std::cout << "MSG: " + msg + "    END\n";
-        // std::cout << "EXPR: " + *task.run_matmul(true) + "    END\n";
 
         REPEATED_PROFILE_DIST_COMPUTATION(kNreps, msg, kNtrials,
             task.output().data(), task.output().size(),
             task.run_matmul(true));
         msg = string_with_format(fmt, "mithral lut dense");
         std::cout << "MSG: " + msg + "    END\n";
-        // std::cout << "EXPR: " + task.lut() + "    END\n";
         REPEATED_PROFILE_DIST_COMPUTATION(kNreps, msg, kNtrials,
             task.output().data(), task.output().size(),
             task.lut());
