@@ -1,4 +1,3 @@
-
 #%%
 #Run the C++ version with pybind11 wrappings
 
