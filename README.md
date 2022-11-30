@@ -46,6 +46,9 @@ The `bazel run` command will build the project and run the tests and benchmarks.
 
 If you want to integrate Bolt with another C++ project, include `cpp/src/include/public.hpp` and add the remaining files under `cpp/src` to your builds. You should let me know if you're interested in doing such an integration because I'm hoping to see Bolt become part of many libraries and thus would be happy to help you. <!-- Note that the `BoltEncoder` object you'll interact with presently needs something else to feed it k-means centroids-see `python/bolt/bolt_api.py` for an example. -->
 
+
+### CLARK 
+
 #### Notes
 
 Bolt currently only supports machines with [AVX2 instructions](https://en.wikipedia.org/wiki/Advanced_Vector_Extensions#Advanced_Vector_Extensions_2), which basically means x86 machines from fall 2013 or later. Contributions for ARM support [are welcome](https://github.com/dblalock/bolt/issues/2). Also note that the Bolt Python wrapper is currently configured to require Clang, since GCC apparently [runs into issues](https://github.com/dblalock/bolt/issues/4).

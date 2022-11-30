@@ -88,10 +88,16 @@ COPY . /home/cbenham/bolt
 RUN . ~/.bashrc \
 	&& ./build.sh \
 	&& true
-	## 1 test known to fail
-	#&& pytest tests || true\
 	##last cpp tests are very slow; but did get a seg fault on  Ucr128 f32
 	#&& cd cpp/build-bolt \
 	#&& ./bolt amm* 
 
 RUN cd cpp && bazel run :main
+
+#install kmc2 
+RUN cd .. \
+	&& git clone -b mneilly/cythonize https://github.com/mneilly/kmc2.git \
+	&& cd kmc2 \
+	&& python setup.py install
+
+RUN python setup.py install && pytest tests/ 
