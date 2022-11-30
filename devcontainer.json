@@ -1,5 +1,6 @@
 {
   "build": { "dockerfile": "Dockerfile" },
+  "remoteUser": "cbenham",
   "customizations": {
     "vscode": {
       "extensions": [
@@ -36,5 +37,5 @@
       ]
     }
   },
-	"workspaceFolder": "./extension-script-bolt.code-workspace"
+	"workspaceFolder": "./extension-script-09-12-22.code-workspace"
 }
