@@ -6,13 +6,15 @@ http_archive(
   name = "pybind11_bazel",
   strip_prefix = "pybind11_bazel-9a24c33cbdc510fa60ab7f5ffb7d80ab89272799",
   urls = ["https://github.com/pybind/pybind11_bazel/archive/9a24c33cbdc510fa60ab7f5ffb7d80ab89272799.zip"],
+  sha256 = "e1fe52ad3468629772c50c67a93449f235aed650a0fe8e89a22fbff285f677a1"
 )
 # We still require the pybind library.
 http_archive(
   name = "pybind11",
   build_file = "@pybind11_bazel//:pybind11.BUILD",
   strip_prefix = "pybind11-2.10.0",
-  urls = ["https://github.com/pybind/pybind11/archive/refs/tags/v2.10.0.tar.gz"]
+  urls = ["https://github.com/pybind/pybind11/archive/refs/tags/v2.10.0.tar.gz"],
+  sha256 = "eacf582fa8f696227988d08cfc46121770823839fe9e301a20fbce67e7cd70ec"
 )
 load("@pybind11_bazel//:python_configure.bzl", "python_configure")
 python_configure(name = "local_config_python")
