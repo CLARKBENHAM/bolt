@@ -1,3 +1,4 @@
+#!/usr/bin/env python3
 #%%
 #Run the C++ version with pybind11 wrappings
 
@@ -13,8 +14,9 @@ from timeit import default_timer as timer
 import numpy as np
 from sklearn.metrics import r2_score
 
-from cpp import mithral_wrapped
 from python import vq_amm
+sys.path.append(os.path.join(os.path.dirname(__file__), ".."))
+from cpp import mithral_wrapped
 
 # Test pybind11 wrapped correctly
 assert 5 == mithral_wrapped.add(2, 3)
@@ -123,7 +125,7 @@ int8_profile = lambda :mithral_wrapped._profile_mithral_int8(kCaltechTaskShape0,
 #float32_data = run_cpp_timing(float32_profile)
 #int8_data = run_cpp_timing(int8_profile)
 #print("float32_data=", float32_data,'\nint8_data=', int8_data)
-#The stdout redirects don't work in repl
+#NOTE: The stdout redirects don't work in repl
 float32_data= [cpp_timing_results(dataset_name='Caltech3x3', numeric_type='f32', problem='amm mithral nolut', N=49284.0, D=27.0, M=2.0, C=64.0, lut_work_coef=-1.0, n_reps=5, n_trials=10, trial_best_mult_ops_per_sec=[20745000.0, 22517000.0, 22724000.0, 17665000.0, 15853000.0], trial_best_sec_times=[0.0047539999999999995, 0.00438, 0.00434, 0.005583, 0.006221]), cpp_timing_results(dataset_name='Caltech3x3', numeric_type='f32', problem='amm mithral denselut', N=49284.0, D=27.0, M=2.0, C=64.0, lut_work_coef=-1.0, n_reps=5, n_trials=10, trial_best_mult_ops_per_sec=[19776000.0, 21781000.0, 22830000.0, 22404000.0, 21892000.0], trial_best_sec_times=[0.004987, 0.004528, 0.00432, 0.0044020000000000005, 0.004505]), cpp_timing_results(dataset_name='Caltech3x3', numeric_type='f32', problem='mithral lut dense', N=49284.0, D=27.0, M=2.0, C=64.0, lut_work_coef=-1.0, n_reps=5, n_trials=10, trial_best_mult_ops_per_sec=[16437000000.0, 16437000000.0, 16437000000.0, 16437000000.0, 16437000000.0], trial_best_sec_times=[6e-06, 6e-06, 6e-06, 6e-06, 6e-06]), cpp_timing_results(dataset_name='Caltech3x3', numeric_type='f32', problem='amm mithral enc', N=49284.0, D=27.0, M=2.0, C=64.0, lut_work_coef=-1.0, n_reps=5, n_trials=10, trial_best_mult_ops_per_sec=[25089000.0, 26691000.0, 24406000.0, 26727000.0, 27057000.0], trial_best_sec_times=[0.0039310000000000005, 0.003695, 0.004041, 0.00369, 0.003645]), cpp_timing_results(dataset_name='Caltech3x3', numeric_type='f32', problem='amm mithral scan', N=49284.0, D=27.0, M=2.0, C=64.0, lut_work_coef=-1.0, n_reps=5, n_trials=10, trial_best_mult_ops_per_sec=[448290000.0, 448290000.0, 382260000.0, 382260000.0, 382260000.0], trial_best_sec_times=[0.00022, 0.00022, 0.000258, 0.000258, 0.000258])] 
 int8_data= [cpp_timing_results(dataset_name='Caltech3x3', numeric_type='i8', problem='amm mithral nolut', N=49284.0, D=27.0, M=2.0, C=64.0, lut_work_coef=-1.0, n_reps=5, n_trials=10, trial_best_mult_ops_per_sec=[98231000.0, 85021000.0, 84511000.0, 82808000.0, 85463000.0], trial_best_sec_times=[0.001004, 0.00116, 0.001167, 0.001191, 0.0011539999999999999]), cpp_timing_results(dataset_name='Caltech3x3', numeric_type='i8', problem='amm mithral denselut', N=49284.0, D=27.0, M=2.0, C=64.0, lut_work_coef=-1.0, n_reps=5, n_trials=10, trial_best_mult_ops_per_sec=[74321000.0, 79344000.0, 80906000.0, 73931000.0, 80641000.0], trial_best_sec_times=[0.001327, 0.0012430000000000002, 0.001219, 0.0013340000000000001, 0.0012230000000000001]), cpp_timing_results(dataset_name='Caltech3x3', numeric_type='i8', problem='mithral lut dense', N=49284.0, D=27.0, M=2.0, C=64.0, lut_work_coef=-1.0, n_reps=5, n_trials=10, trial_best_mult_ops_per_sec=[16437000000.0, 16437000000.0, 16437000000.0, 16437000000.0, 16437000000.0], trial_best_sec_times=[6e-06, 6e-06, 6e-06, 6e-06, 6e-06]), cpp_timing_results(dataset_name='Caltech3x3', numeric_type='i8', problem='amm mithral enc', N=49284.0, D=27.0, M=2.0, C=64.0, lut_work_coef=-1.0, n_reps=5, n_trials=10, trial_best_mult_ops_per_sec=[110690000.0, 112710000.0, 110320000.0, 110440000.0, 110940000.0], trial_best_sec_times=[0.000891, 0.000875, 0.000894, 0.000893, 0.000889]), cpp_timing_results(dataset_name='Caltech3x3', numeric_type='i8', problem='amm mithral scan', N=49284.0, D=27.0, M=2.0, C=64.0, lut_work_coef=-1.0, n_reps=5, n_trials=10, trial_best_mult_ops_per_sec=[382260000.0, 448290000.0, 448290000.0, 448290000.0, 448290000.0], trial_best_sec_times=[0.000258, 0.00022, 0.00022, 0.00022, 0.00022])]
 
