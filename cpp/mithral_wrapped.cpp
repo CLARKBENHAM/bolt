@@ -67,18 +67,30 @@ PYBIND11_MODULE(mithral_wrapped, m) {
                         float lut_work_const){
            return mithral_amm_task<float>{N,D,M,ncodebooks, lut_work_const};
        }))
-       .def("output", &mithral_amm_task<float>::output)
-       .def_readwrite("X"     , &mithral_amm_task<float>::X) //can return out matricies?
-       .def_readonly("Q"     , &mithral_amm_task<float>::Q)
-       .def_readonly("amm"     , &mithral_amm_task<float>::amm) // whole amm object?
-        .def("__repr__",
-        [](const mithral_amm_task<float> &a) {
-            std::stringstream ss;
-            ss << &a;  
-            std::string address = ss.str(); 
-            return std::string("mithral_amm_task<float> at " + address);
-        }
-        );
+       .def("output"                                                           , &mithral_amm_task<float>::output)
+       .def("run_matmul"                                                       , &mithral_amm_task<float>::run_matmul)
+       .def_readonly("amm"                                                     , &mithral_amm_task<float>::amm) // whole amm object
+       .def_readwrite("X"                                                      , &mithral_amm_task<float>::X) //can return out matricies?
+       .def_readonly("Q"                                                       , &mithral_amm_task<float>::Q)
+       // stuff we pass into the amm object (would be learned during training)
+       .def_readwrite("N_padded"                                               , &mithral_amm_task<float>::N_padded)
+       .def_readwrite("centroids"                                              , &mithral_amm_task<float>::centroids)
+       .def_readwrite("nsplits"                                                , &mithral_amm_task<float>::nsplits)
+       .def_readwrite("splitdims"                                              , &mithral_amm_task<float>::splitdims)
+       .def_readwrite("splitvals"                                              , &mithral_amm_task<float>::splitvals)
+       .def_readwrite("encode_scales"                                          , &mithral_amm_task<float>::encode_scales)
+       .def_readwrite("encode_offsets"                                         , &mithral_amm_task<float>::encode_offsets)
+       .def_readwrite("nnz_per_centroid"                                       , &mithral_amm_task<float>::nnz_per_centroid)
+       .def_readwrite("idxs"                                                   , &mithral_amm_task<float>::idxs)
+        
+       .def("__repr__",
+       [](const mithral_amm_task<float> &a) {
+           std::stringstream ss;
+           ss << &a;  
+           std::string address = ss.str(); 
+           return std::string("mithral_amm_task<float> at " + address);
+       }
+       );
         
     //amm so can call attributes from mithtral_amm_task.output()
     using traits = mithral_input_type_traits<float>;
@@ -97,9 +109,31 @@ PYBIND11_MODULE(mithral_wrapped, m) {
                                      splitdims, splitvals,
                                      encode_scales, encode_offsets,
                                       idxs,  nnz_per_centroid};
-       }))
-       .def_readonly("out_mat"     , &mithral_amm<float>::out_mat) //eigen object
-    ;
+        }))
+        // ctor params
+        .def_readwrite("N"                  , &mithral_amm<float>::N)
+        .def_readwrite("D"                  , &mithral_amm<float>::D)
+        .def_readwrite("M"                  , &mithral_amm<float>::M)
+        .def_readwrite("ncodebooks"         , &mithral_amm<float>::ncodebooks)
+        //  ?dont have to make const attributes readonly?
+        .def_readwrite("centroids"          , &mithral_amm<float>::centroids)
+        .def_readwrite("splitdims"          , &mithral_amm<float>::splitdims)
+        .def_readwrite("splitvals"          , &mithral_amm<float>::splitvals)
+        .def_readwrite("encode_scales"      , &mithral_amm<float>::encode_scales)
+        .def_readwrite("encode_offsets"     , &mithral_amm<float>::encode_offsets)
+        .def_readwrite("idxs"               , &mithral_amm<float>::idxs)
+        .def_readwrite("nnz_per_centroid"  , &mithral_amm<float>::nnz_per_centroid)
+        // storage for intermediate values
+        .def_readwrite("tmp_codes"          , &mithral_amm<float>::tmp_codes)
+        .def_readwrite("codes"              , &mithral_amm<float>::codes)
+        .def_readwrite("tmp_luts_f32"       , &mithral_amm<float>::tmp_luts_f32)
+        .def_readwrite("luts"               , &mithral_amm<float>::luts)
+        // outputs
+        .def_readonly("out_offset_sum"      , &mithral_amm<float>::out_offset_sum)
+        .def_readonly("out_scale"           , &mithral_amm<float>::out_scale)
+        .def_readonly("out_mat"             , &mithral_amm<float>::out_mat) //eigen object
+           
+        ;
 
     ////Eigen type so can return real matrix
     //   .def_readonly("data"     , &ColMatrix<float>::output) // whole amm object?
