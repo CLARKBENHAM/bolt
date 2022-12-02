@@ -13,11 +13,12 @@
 			"request": "launch",
 			"program": "/home/cbenham/bolt/cpp/bazel-bin/main",
 			"args": ["--durations", "yes", "amm mithral"],
-			"stopAtEntry": false,
+			"stopAtEntry": true,
 			"cwd": "${fileDirname}",
 			"environment": [],
 			"externalConsole": false,
 			"MIMode": "gdb",
+      "miDebuggerPath": "/usr/bin/gdb",
 			"setupCommands": [
 					{
 							"description": "Enable pretty-printing for gdb",
@@ -29,7 +30,8 @@
 							"text": "-gdb-set disassembly-flavor intel",
 							"ignoreFailures": true
 					}
-			]
+			],
+			"preLaunchTask": "build_bazel_main_dbg"
 		},
 	]
 }
