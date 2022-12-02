@@ -116,16 +116,19 @@ PYBIND11_MODULE(mithral_wrapped, m) {
         .def_readwrite("M"                  , &mithral_amm<float>::M)
         .def_readwrite("ncodebooks"         , &mithral_amm<float>::ncodebooks)
         //  ?dont have to make const attributes readonly?
-        .def_readwrite("centroids"          , &mithral_amm<float>::centroids)
-        .def_readwrite("splitdims"          , &mithral_amm<float>::splitdims)
-        .def_readwrite("splitvals"          , &mithral_amm<float>::splitvals)
-        .def_readwrite("encode_scales"      , &mithral_amm<float>::encode_scales)
-        .def_readwrite("encode_offsets"     , &mithral_amm<float>::encode_offsets)
-        .def_readwrite("idxs"               , &mithral_amm<float>::idxs)
-        .def_readwrite("nnz_per_centroid"  , &mithral_amm<float>::nnz_per_centroid)
+        //  Need to copy these pointers to Python as arrays. Eigen matricies are auto-converted to numpy
+        // nsplits_per_codebook=4; scan_block_nrows=32; lut_sz=16; CodebookTileSz=2; RowTileSz = 2 or 1
+        // nblocks = N/scan_block_nrows; total_nsplits = ncodebooks * nsplits_per_codebook;
+        .def_readwrite("centroids"        , &mithral_amm<float>::centroids)  //shape: centroids_codebook_stride * ncodebooks
+        .def_readwrite("splitdims"        , &mithral_amm<float>::splitdims) //shape: total_nsplits
+        .def_readwrite("splitvals"        , &mithral_amm<float>::splitvals) //shape:  total_nsplits
+        .def_readwrite("encode_scales"    , &mithral_amm<float>::encode_scales) //shape: total_nsplits
+        .def_readwrite("encode_offsets"   , &mithral_amm<float>::encode_offsets) //shape: total_nsplits
+        .def_readwrite("idxs"             , &mithral_amm<float>::idxs) //shape:  nnz_per_centroid * ncodebooks // used if lut sparse (nnz_per_centroid>0)
+        .def_readwrite("nnz_per_centroid" , &mithral_amm<float>::nnz_per_centroid) //value: lut_work_const > 0 ? lut_work_const * D / ncodebooks : D //lut_work_const an element from lutconsts {-1 , 1 , 2 , 4}
         // storage for intermediate values
-        .def_readwrite("tmp_codes"          , &mithral_amm<float>::tmp_codes)
-        .def_readwrite("codes"              , &mithral_amm<float>::codes)
+        .def_readwrite("tmp_codes"          , &mithral_amm<float>::tmp_codes) 
+        .def_readwrite("codes"              , &mithral_amm<float>::codes) //shape: zip_bolt_colmajor from tmp_codes
         .def_readwrite("tmp_luts_f32"       , &mithral_amm<float>::tmp_luts_f32)
         .def_readwrite("luts"               , &mithral_amm<float>::luts)
         // outputs

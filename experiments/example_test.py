@@ -1,6 +1,5 @@
-#!/usr/bin/env python3
 #%%
-#Run the C++ version with pybind11 wrappings
+# Run the C++ version with pybind11 wrappings
 
 import re
 import os
@@ -213,16 +212,50 @@ for t in est_attr:
 #            encode_scales.data(), encode_offsets.data(),
 #            idxs.data(), nnz_per_centroid), //mithral_amm type is def'd in mithral.hpp
 
-# #set on task.amm since the task is already made
-#task.amm.N_padded=
-#task.amm.centroids=est.enc.centroids
-#task.amm.nsplits=
-#task.amm.splitdims=
-#task.amm.splitvals=
-#task.amm.encode_scales=
-#task.amm.encode_offsets=est.enc.offsets
-#task.amm.nnz_per_centroid=
-#task.amm.idxs= #How can idxs be passed into constructor? Need to be learend first?
+# #set on task.amm since the task is already made(?)
+# #copy from the python which has been trained
+#task.amm.N_padded         = 
+#task.amm.centroids        = est.enc.centroids
+#task.amm.nsplits          = 
+#task.amm.splitdims        = 
+#task.amm.splitvals        = 
+#task.amm.encode_scales    = est.enc.scales
+#task.amm.encode_offsets   = est.offset
+#task.amm.nnz_per_centroid = 
+#task.amm.idxs             = 
+
+print(f'''\n\ntask:
+task.N_padded         = {task.N_padded         }
+task.centroids        = {task.centroids        }
+task.nsplits          = {task.nsplits          }
+task.splitdims        = {task.splitdims        }
+task.splitvals        = {task.splitvals        }
+task.encode_scales    = {task.encode_scales    }
+task.encode_offsets   = {task.encode_offsets   }
+task.nnz_per_centroid = {task.nnz_per_centroid }
+task.idxs             = {task.idxs             }
+''')
+print(f'''\n\namm:
+task.amm.N                = {task.amm.N                               }
+task.amm.D                = {task.amm.D                               }
+task.amm.M                = {task.amm.M                               }
+task.amm.ncodebooks       = {task.amm.ncodebooks                      }
+task.amm.centroids        = {task.amm.centroids                       }
+task.amm.splitdims        = {task.amm.splitdims                       }
+task.amm.splitvals        = {task.amm.splitvals                       }
+task.amm.encode_scales    = {task.amm.encode_scales                   }
+task.amm.encode_offsets   = {task.amm.encode_offsets                  }
+task.amm.idxs             = {task.amm.idxs                            }
+task.amm.nnz_per_centroid = {task.amm.nnz_per_centroid                }
+task.amm.tmp_codes        = {task.amm.tmp_codes                       }
+task.amm.codes            = {task.amm.codes                           }
+task.amm.tmp_luts_f32     = {task.amm.tmp_luts_f32                    }
+task.amm.luts             = {task.amm.luts                            }
+task.amm.out_offset_sum   = {task.amm.out_offset_sum                  }
+task.amm.out_scale        = {task.amm.out_scale                       }
+task.amm.out_mat          = {task.amm.out_mat                         }
+''')
+
 
 #Just set intermidiate values needed for scan(?)
 assert task.amm.codes.shape==est.A_enc.shape
