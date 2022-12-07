@@ -8,7 +8,7 @@
 		{"name":"Python: Current File","type":"python","request":"launch","program":"${file}","console":"integratedTerminal","justMyCode":true},
 		{"name":"Python: amm_main","type":"python","request":"launch","cwd": "/home/cbenham/bolt/experiments", "program":"run_amm_main.py","console":"integratedTerminal","justMyCode":true},
 		{
-			"name": "(gdb) Launch",
+			"name": "(gdb) Launch Mithral_main",
 			"type": "cppdbg",
 			"request": "launch",
 			"program": "/home/cbenham/bolt/cpp/bazel-bin/main",
@@ -31,6 +31,9 @@
 							"ignoreFailures": true
 					}
 			],
+			"sourceFileMap": {
+        "/proc/self/cwd": "/home/cbenham/bolt/cpp", //have to use absolute path
+      },
 			"preLaunchTask": "build_bazel_main_dbg"
 		},
 	]

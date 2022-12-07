@@ -128,7 +128,7 @@ PYBIND11_MODULE(mithral_wrapped, m) {
         .def_readwrite("nnz_per_centroid" , &mithral_amm<float>::nnz_per_centroid) //value: lut_work_const > 0 ? lut_work_const * D / ncodebooks : D //lut_work_const an element from lutconsts {-1 , 1 , 2 , 4}
         // storage for intermediate values
         .def_readwrite("tmp_codes"          , &mithral_amm<float>::tmp_codes) 
-        .def_readwrite("codes"              , &mithral_amm<float>::codes) //shape: zip_bolt_colmajor from tmp_codes
+        .def_readwrite("codes"              , &mithral_amm<float>::codes) //shape: (N/B, C) where B blocks are zipped into each col. zip_bolt_colmajor from tmp_codes: "we go from storing 4-bit codes as u8 values in column-major order to storing pairs of 4-bit codes in a blocked column-major layout" per https://github.com/dblalock/bolt/issues/20
         .def_readwrite("tmp_luts_f32"       , &mithral_amm<float>::tmp_luts_f32)
         .def_readwrite("luts"               , &mithral_amm<float>::luts)
         // outputs

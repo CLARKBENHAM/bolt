@@ -1,5 +1,7 @@
 load("@pybind11_bazel//:build_defs.bzl", "pybind_extension")
 
+# Have to include '-ggdb' in copts even with compilation mode in tasks.json enabled. 
+# What bazel arg could remove this to make faster?
 cc_binary(
     name = "main",
     #includes profile_amm.cpp for timing tests

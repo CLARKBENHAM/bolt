@@ -164,7 +164,7 @@ print(f'time to run mithral with python bindings: {e-s:.7f}s',
       f'Throughput: {num_dists/(e-s):.2E}/sec')
 print(f"{100*np.sum(Y_hat1!=Y_hat)/Y_hat.size:.1f}% changed after encoding") 
 
-# Compare speeds to Python default (inaccurate since no params learned)
+# Compare speeds to Python default (inaccurate since C++ binds don't learn params)
 print(type(X), type(Q), X.shape, Q.shape, np.mean(X), np.mean(Q))
 s=timer()
 Y=X@Q
@@ -189,19 +189,19 @@ e=timer()
 print(f"Python implementation of Mithral faster by: {old_t/(e-s)}, 1-R^2: {1-r2_score(Y, Y_hat)}")
 est_attr=['A_enc',
   'enc',
- 'fit',
- 'get_params',
- 'get_speed_metrics',
- 'lut_work_const',
- 'luts',
- 'ncentroids',
- 'ncodebooks',
- 'offset',
- 'predict',
- 'reset_for_new_task',
- 'scale',
- 'set_A',
- 'set_B']
+  'fit',
+  'get_params',
+  'get_speed_metrics',
+  'lut_work_const',
+  'luts',
+  'ncentroids',
+  'ncodebooks',
+  'offset',
+  'predict',
+  'reset_for_new_task',
+  'scale',
+  'set_A',
+  'set_B']
 for t in est_attr:
   print(t, est.__getattribute__(t))
   

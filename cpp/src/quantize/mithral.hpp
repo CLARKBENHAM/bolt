@@ -171,7 +171,7 @@ struct mithral_amm {
     const int8_t* splitvals;
     const scale_t* encode_scales;
     const offset_t* encode_offsets;
-    const int* idxs;
+    const int* idxs; 
     int nnz_per_centroid;
 
     // storage for intermediate values
