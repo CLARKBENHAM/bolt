@@ -118,7 +118,7 @@ PYBIND11_MODULE(mithral_wrapped, m) {
         //  ?dont have to make const attributes readonly?
         //  Need to copy these pointers to Python as arrays. Eigen matricies are auto-converted to numpy
         // nsplits_per_codebook=4; scan_block_nrows=32; lut_sz=16; CodebookTileSz=2; RowTileSz = 2 or 1
-        // nblocks = N/scan_block_nrows; total_nsplits = ncodebooks * nsplits_per_codebook;
+        // nblocks = N/scan_block_nrows; total_nsplits = ncodebooks * nsplits_per_codebook;centroids_codebook_stride=ncentroids*ncols; ncentroids=16
         .def_readwrite("centroids"        , &mithral_amm<float>::centroids)  //shape: centroids_codebook_stride * ncodebooks
         .def_readwrite("splitdims"        , &mithral_amm<float>::splitdims) //shape: total_nsplits
         .def_readwrite("splitvals"        , &mithral_amm<float>::splitvals) //shape:  total_nsplits

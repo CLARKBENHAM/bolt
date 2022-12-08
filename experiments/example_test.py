@@ -112,14 +112,15 @@ def test_pybinding_worked(kCaltechTaskShape0):
 
 #Task Constants
 name = "Caltech3x3" #'cifar100' 
-N,D,M = (224 - 3 + 1) * (224 - 3 + 1), 3 * (3 * 3), 2
+#N,D,M = (224 - 3 + 1) * (224 - 3 + 1), 3 * (3 * 3), 2 
+N,D,M= 49312,27,2 #dimensions of X and Q above produces. These stay
 kCaltechTaskShape0=mithral_wrapped.MatmulTaskShape(N,D,M, name)
 ncodebooks= [16] #[2, 4, 8, 16, 32, 64]
 lutconsts= [-1] #[-1, 1, 2, 4]
 
 #%% Get raw C++ speeds
-float32_profile = lambda : mithral_wrapped._profile_mithral(kCaltechTaskShape0, ncodebooks, lutconsts)
-int8_profile = lambda :mithral_wrapped._profile_mithral_int8(kCaltechTaskShape0, ncodebooks, lutconsts)
+#float32_profile = lambda : mithral_wrapped._profile_mithral(kCaltechTaskShape0, ncodebooks, lutconsts)
+#int8_profile = lambda :mithral_wrapped._profile_mithral_int8(kCaltechTaskShape0, ncodebooks, lutconsts)
 
 #float32_data = run_cpp_timing(float32_profile)
 #int8_data = run_cpp_timing(int8_profile)
@@ -178,13 +179,14 @@ print(f"New way Times Faster: {new_throughput/old_throughput}")
 print("1-R^2: ",1-r2_score(Y, Y_hat))
 print(r2_score(Y, Y_hat1), r2_score(Y, Y_hat))
 print(np.mean(Y), np.mean(Y_hat))
+print(X.shape, Q.shape)
 
 #%% Copy Python Learned values to C++
 hparams_dict = {'ncodebooks': ncodebooks[0], 'lut_work_const': lutconsts[0]}
 est = vq_amm.MithralMatmul(**hparams_dict)
 est.fit(X,Q)
 s=timer()
-Y_hat=est(X, Q) #makes est. But even a random X doesn't change output?
+Y_hat=est(X, Q) #makes est. but equivalent to est(None, Q)
 e=timer()
 print(f"Python implementation of Mithral faster by: {old_t/(e-s)}, 1-R^2: {1-r2_score(Y, Y_hat)}")
 est_attr=['A_enc',
@@ -204,7 +206,7 @@ est_attr=['A_enc',
   'set_B']
 for t in est_attr:
   print(t, est.__getattribute__(t))
-  
+
 #fitted = ['ncodebooks', 'ncentroids', 'A_enc', 'luts', 'offset', 'scale'] #works to copy in python(?)
 #things you're supposed to learn per mithral_amm_task constructor
 #        amm(N_padded, D, M, ncodebooks, centroids.data(),
@@ -224,38 +226,42 @@ for t in est_attr:
 #task.amm.nnz_per_centroid = 
 #task.amm.idxs             = 
 
-print(f'''\n\ntask:
-task.N_padded         = {task.N_padded         }
-task.centroids        = {task.centroids        }
-task.nsplits          = {task.nsplits          }
-task.splitdims        = {task.splitdims        }
-task.splitvals        = {task.splitvals        }
-task.encode_scales    = {task.encode_scales    }
-task.encode_offsets   = {task.encode_offsets   }
-task.nnz_per_centroid = {task.nnz_per_centroid }
-task.idxs             = {task.idxs             }
-''')
-print(f'''\n\namm:
-task.amm.N                = {task.amm.N                               }
-task.amm.D                = {task.amm.D                               }
-task.amm.M                = {task.amm.M                               }
-task.amm.ncodebooks       = {task.amm.ncodebooks                      }
-task.amm.centroids        = {task.amm.centroids                       }
-task.amm.splitdims        = {task.amm.splitdims                       }
-task.amm.splitvals        = {task.amm.splitvals                       }
-task.amm.encode_scales    = {task.amm.encode_scales                   }
-task.amm.encode_offsets   = {task.amm.encode_offsets                  }
-task.amm.idxs             = {task.amm.idxs                            }
-task.amm.nnz_per_centroid = {task.amm.nnz_per_centroid                }
-task.amm.tmp_codes        = {task.amm.tmp_codes                       }
-task.amm.codes            = {task.amm.codes                           }
-task.amm.tmp_luts_f32     = {task.amm.tmp_luts_f32                    }
-task.amm.luts             = {task.amm.luts                            }
-task.amm.out_offset_sum   = {task.amm.out_offset_sum                  }
-task.amm.out_scale        = {task.amm.out_scale                       }
-task.amm.out_mat          = {task.amm.out_mat                         }
-''')
+#print(f'''\n\ntask:
+#task.N_padded         = {task.N_padded         }
+#task.centroids        = {task.centroids        }
+#task.nsplits          = {task.nsplits          }
+#task.splitdims        = {task.splitdims        }
+#task.splitvals        = {task.splitvals        }
+#task.encode_scales    = {task.encode_scales    }
+#task.encode_offsets   = {task.encode_offsets   }
+#task.nnz_per_centroid = {task.nnz_per_centroid }
+#task.idxs             = {task.idxs             }
+#''')
+#print(f'''\n\namm:
+#task.amm.N                = {task.amm.N                               }
+#task.amm.D                = {task.amm.D                               }
+#task.amm.M                = {task.amm.M                               }
+#task.amm.ncodebooks       = {task.amm.ncodebooks                      }
+#task.amm.centroids        = {task.amm.centroids                       }
+#task.amm.splitdims        = {task.amm.splitdims                       }
+#task.amm.splitvals        = {task.amm.splitvals                       }
+#task.amm.encode_scales    = {task.amm.encode_scales                   }
+#task.amm.encode_offsets   = {task.amm.encode_offsets                  }
+#task.amm.idxs             = {task.amm.idxs                            }
+#task.amm.nnz_per_centroid = {task.amm.nnz_per_centroid                }
+#task.amm.tmp_codes        = {task.amm.tmp_codes                       }
+#task.amm.codes            = {task.amm.codes                           }
+#task.amm.tmp_luts_f32     = {task.amm.tmp_luts_f32                    }
+#task.amm.luts             = {task.amm.luts                            }
+#task.amm.out_offset_sum   = {task.amm.out_offset_sum                  }
+#task.amm.out_scale        = {task.amm.out_scale                       }
+#task.amm.out_mat          = {task.amm.out_mat                         }
+#''')
 
+print(task.amm.codes.shape, task.amm.luts.shape)
+print(est.A_enc.shape, est.luts.shape)
+#(49312, 16) (49312, 256)
+#(49312, 16) (2, 16, 16)
 
 #Just set intermidiate values needed for scan(?)
 assert task.amm.codes.shape==est.A_enc.shape
