@@ -2,10 +2,11 @@
 #include "test/quantize/profile_amm.hpp"
 // #include "src/external/eigen/Eigen/Core"
 
-// # include <eigen3/Eigen/Core>
+# include <eigen3/Eigen/Core>
 #include <pybind11/pybind11.h>
 #include <pybind11/stl.h>
 #include <pybind11/eigen.h>
+#include <pybind11/numpy.h>
 
 #include <string> 
 
@@ -26,6 +27,18 @@ namespace py = pybind11;
         cout << "out:    " << shape.name << endl;
         printf("shapename: %s\n", shape.name);
     }
+
+//struct wrapped_mithral_amm_float : public mithral_amm<float> {
+//    // //need to wrap 
+//    //const float* centroids;
+//    //const uint32_t* splitdims;
+//    //const int8_t* splitvals;
+//    //const scale_t* encode_scales;
+//    //const offset_t* encode_offsets;
+//    //const int* idxs; 
+//
+//};
+
 
 PYBIND11_MODULE(mithral_wrapped, m) {
     m.doc() = "pybind11 plugin that wrapps mithral"; // Optional module docstring
@@ -97,6 +110,7 @@ PYBIND11_MODULE(mithral_wrapped, m) {
     using scale_t = typename traits::encoding_scales_type;
     using offset_t = typename traits::encoding_offsets_type;
     using output_t = typename traits::output_type;
+    // Pulled from parts of code
     py::class_<mithral_amm<float>>(m, "mithral_amm_float")
        .def(py::init([](int N, int D, int M, int ncodebooks, const float* centroids,
                         // for encoding
@@ -119,6 +133,7 @@ PYBIND11_MODULE(mithral_wrapped, m) {
         //  Need to copy these pointers to Python as arrays. Eigen matricies are auto-converted to numpy
         // nsplits_per_codebook=4; scan_block_nrows=32; lut_sz=16; CodebookTileSz=2; RowTileSz = 2 or 1
         // nblocks = N/scan_block_nrows; total_nsplits = ncodebooks * nsplits_per_codebook;centroids_codebook_stride=ncentroids*ncols; ncentroids=16
+
         .def_readwrite("centroids"        , &mithral_amm<float>::centroids)  //shape: centroids_codebook_stride * ncodebooks
         .def_readwrite("splitdims"        , &mithral_amm<float>::splitdims) //shape: total_nsplits
         .def_readwrite("splitvals"        , &mithral_amm<float>::splitvals) //shape:  total_nsplits
@@ -126,6 +141,64 @@ PYBIND11_MODULE(mithral_wrapped, m) {
         .def_readwrite("encode_offsets"   , &mithral_amm<float>::encode_offsets) //shape: total_nsplits
         .def_readwrite("idxs"             , &mithral_amm<float>::idxs) //shape:  nnz_per_centroid * ncodebooks // used if lut sparse (nnz_per_centroid>0)
         .def_readwrite("nnz_per_centroid" , &mithral_amm<float>::nnz_per_centroid) //value: lut_work_const > 0 ? lut_work_const * D / ncodebooks : D //lut_work_const an element from lutconsts {-1 , 1 , 2 , 4}
+        //return COPY from pointers, but you have to know shape going in. Read won't trigger page faults(!?!)
+        .def("getCentroids", [](mithral_amm<float> &self) {
+            const int rows=self.ncodebooks*16;
+            const int cols=self.D;
+            Map<Eigen::MatrixXf> mf(const_cast<float*>(self.centroids),rows,cols);
+            return mf; 
+        })
+        .def("getSplitdims", [](mithral_amm<float> &self) {
+            const int rows=self.total_nsplits;
+            const int cols=1;
+            Map<Eigen::Matrix<uint32_t, -1,-1>> mf(const_cast<uint32_t*>(self.splitdims),rows,cols);
+            return mf; 
+        })
+        .def("getSplitvals", [](mithral_amm<float> &self) {
+            const int rows=self.total_nsplits;
+            const int cols=1;
+            Map<Eigen::Matrix<int8_t, -1, -1>> mf(const_cast<int8_t*>(self.splitvals),rows,cols);
+            return mf; 
+        })
+        .def("getEncode_scales", [](mithral_amm<float> &self) {
+            const int rows=self.total_nsplits;
+            const int cols=1;
+            Map<Eigen::MatrixXf> mf(const_cast<scale_t*>(self.encode_scales),rows,cols);
+            return mf; 
+        })
+        .def("getEncode_offsets", [](mithral_amm<float> &self) {
+            const int rows=self.total_nsplits;
+            const int cols=1;
+            Map<Eigen::MatrixXf> mf(const_cast<offset_t*>(self.encode_offsets),rows,cols);
+            return mf; 
+        })
+        .def("getIdxs", [](mithral_amm<float> &self) {
+            const int rows=self.nnz_per_centroid;
+            const int cols=self.ncodebooks;
+            Map<Eigen::MatrixXi> mf(const_cast<int*>(self.idxs),rows,cols);
+            return mf; 
+        })
+    
+        //setters, Can change pointer to new value; can't overwrite existing. Fine to Copy by value here, only used initally
+        .def("setCentroids"                                          , [](mithral_amm<float> &self , py::array_t<float> mf) {
+            self.centroids =const_cast<const float*>(mf.data());
+        })
+        .def("setSplitdims"                                          , [](mithral_amm<float> &self , py::array_t<uint32_t> mf) {
+            self.splitdims =const_cast<const uint32_t*>(mf.data());
+        })
+        .def("setSplitvals"                                          , [](mithral_amm<float> &self , py::array_t<int8_t> mf) {
+            self.splitvals =const_cast<const int8_t*>(mf.data());
+        })
+        .def("setEncode_scales"                                      , [](mithral_amm<float> &self , py::array_t<scale_t> mf) {
+            self.encode_scales =const_cast<const scale_t*>(mf.data());
+        })
+        .def("setEncode_offsets"                                     , [](mithral_amm<float> &self , py::array_t<offset_t> mf) {
+            self.encode_offsets =const_cast<const offset_t*>(mf.data());
+        })
+        .def("setIdxs"                                               , [](mithral_amm<float> &self , py::array_t<int> mf) {
+            self.idxs =const_cast<const int*>(mf.data());
+        })
+        
         // storage for intermediate values
         .def_readwrite("tmp_codes"          , &mithral_amm<float>::tmp_codes) 
         .def_readwrite("codes"              , &mithral_amm<float>::codes) //shape: (N/B, C) where B blocks are zipped into each col. zip_bolt_colmajor from tmp_codes: "we go from storing 4-bit codes as u8 values in column-major order to storing pairs of 4-bit codes in a blocked column-major layout" per https://github.com/dblalock/bolt/issues/20

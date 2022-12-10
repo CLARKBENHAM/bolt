@@ -117,6 +117,9 @@ struct mithral_amm {
                 const scale_t* encode_scales, const offset_t* encode_offsets,
                 // for lut creation
                 const int* idxs, int nnz_per_centroid):
+                
+        nsplits_per_codebook(4),
+        total_nsplits(ncodebooks * nsplits_per_codebook),
         N(N), D(D), M(M), ncodebooks(ncodebooks), centroids(centroids),
         splitdims(splitdims), splitvals(splitvals),
         encode_scales(encode_scales), encode_offsets(encode_offsets),
@@ -160,6 +163,10 @@ struct mithral_amm {
                          luts.data(), (uint8_t*)out_mat.data());
         #endif
     }
+
+    //size params
+    const int nsplits_per_codebook;
+    const int total_nsplits;
 
     // ctor params
     int N;
