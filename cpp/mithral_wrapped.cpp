@@ -180,22 +180,22 @@ PYBIND11_MODULE(mithral_wrapped, m) {
         })
     
         //setters, Can change pointer to new value; can't overwrite existing. Fine to Copy by value here, only used initally
-        .def("setCentroids"                                          , [](mithral_amm<float> &self , py::array_t<float> mf) {
+        .def("setCentroids", [](mithral_amm<float> &self , py::array_t<float> mf) {
             self.centroids =const_cast<const float*>(mf.data());
         })
-        .def("setSplitdims"                                          , [](mithral_amm<float> &self , py::array_t<uint32_t> mf) {
+        .def("setSplitdims", [](mithral_amm<float> &self , py::array_t<uint32_t> mf) {
             self.splitdims =const_cast<const uint32_t*>(mf.data());
         })
-        .def("setSplitvals"                                          , [](mithral_amm<float> &self , py::array_t<int8_t> mf) {
+        .def("setSplitvals", [](mithral_amm<float> &self , py::array_t<int8_t> mf) {
             self.splitvals =const_cast<const int8_t*>(mf.data());
         })
-        .def("setEncode_scales"                                      , [](mithral_amm<float> &self , py::array_t<scale_t> mf) {
+        .def("setEncode_scales", [](mithral_amm<float> &self , py::array_t<scale_t> mf) {
             self.encode_scales =const_cast<const scale_t*>(mf.data());
         })
-        .def("setEncode_offsets"                                     , [](mithral_amm<float> &self , py::array_t<offset_t> mf) {
+        .def("setEncode_offsets", [](mithral_amm<float> &self , py::array_t<offset_t> mf) {
             self.encode_offsets =const_cast<const offset_t*>(mf.data());
         })
-        .def("setIdxs"                                               , [](mithral_amm<float> &self , py::array_t<int> mf) {
+        .def("setIdxs", [](mithral_amm<float> &self , py::array_t<int> mf) {
             self.idxs =const_cast<const int*>(mf.data());
         })
         

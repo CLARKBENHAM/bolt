@@ -120,6 +120,7 @@ struct mithral_amm {
                 
         nsplits_per_codebook(4),
         total_nsplits(ncodebooks * nsplits_per_codebook),
+        
         N(N), D(D), M(M), ncodebooks(ncodebooks), centroids(centroids),
         splitdims(splitdims), splitvals(splitvals),
         encode_scales(encode_scales), encode_offsets(encode_offsets),
