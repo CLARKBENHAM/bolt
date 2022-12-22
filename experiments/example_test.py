@@ -121,7 +121,8 @@ N,D,M=10000, 512, 100
 kCifar100TaskShape=mithral_wrapped.MatmulTaskShape(N,D,M, "Cifar100")
 kCaltechTaskShape0=kCifar100TaskShape
 
-#%% Get raw C++ speeds
+
+#% Get raw C++ speeds
 float32_profile = lambda : mithral_wrapped._profile_mithral(kCaltechTaskShape0, ncodebooks, lutconsts)
 int8_profile = lambda :mithral_wrapped._profile_mithral_int8(kCaltechTaskShape0, ncodebooks, lutconsts)
 ##NOTE: The stdout redirects don't work in repl
@@ -157,7 +158,8 @@ for data in [float32_data, int8_data]:
 new_throughput = min(map(lambda r: max(r.trial_best_mult_ops_per_sec), int8_data)) #type of operation matters
 new_time = max(map(lambda r: min(r.trial_best_sec_times), int8_data)) #type of operation matters
 
-#%% Speed of Python C++ Bindings
+
+#% Speed of Python C++ Bindings
 task=mithral_wrapped.mithral_amm_task_float(N,D,M, ncodebooks[0], lutconsts[0])
 X=task.X
 Q=task.Q
@@ -171,9 +173,10 @@ num_dists=Y_hat.size
 print(f'time to run mithral with python bindings: {e-s:.7f}s',
       f'Throughput: {num_dists/(e-s):.2E}/sec')
 print(f"{100*np.sum(Y_hat1!=Y_hat)/Y_hat.size:.1f}% changed after encoding") 
+unfitted_Y=Y_hat
 
 # Compare speeds to Python default (inaccurate since C++ binds don't learn params)
-print(type(X), type(Q), X.shape, Q.shape, np.mean(X), np.mean(Q))
+# print(type(X), type(Q), X.shape, Q.shape, np.mean(X), np.mean(Q))
 s=timer()
 Y=X@Q
 e=timer()
@@ -184,12 +187,12 @@ print(f'new time {new_time} vs old time {old_t}')
 print(f"New way Times Faster: {new_throughput/old_throughput}")
 
 print("1-R^2: ",1-r2_score(Y, Y_hat))
-print("1-R^2: ",1-r2_score(Y, Y_hat))
 print(r2_score(Y, Y_hat1), r2_score(Y, Y_hat))
 print(np.mean(Y), np.mean(Y_hat))
 print(X.shape, Q.shape)
 
-#%% Copy Python Learned values to C++
+
+#% Copy Python Learned values to C++
 hparams_dict = {'ncodebooks': ncodebooks[0], 'lut_work_const': lutconsts[0]}
 est = vq_amm.MithralMatmul(**hparams_dict)
 #Num centroids is fixed at 16; so can always fit in L1?    
@@ -216,40 +219,75 @@ est_attr=['A_enc',
 #for t in est_attr:
 #  print(t, est.__getattribute__(t))
 #%%
-print(task.centroids[0][0], task.centroids.shape)
-print(task.amm.getCentroids().shape, task.amm.getCentroids()[0][0])
-task.amm.setCentroids(est.enc.centroids)
-print(task.amm.getCentroids().shape      , task.amm.getCentroids()[0][0])
-print(task.amm.getSplitdims().shape      , task.amm.getSplitdims()[0][0])
-print(task.amm.getSplitvals().shape      , task.amm.getSplitvals()[0][0])
-print(task.amm.getEncode_scales().shape  , task.amm.getEncode_scales()[0][0])
-print(task.amm.getEncode_offsets().shape , task.amm.getEncode_offsets()[0][0])
-print(task.amm.getIdxs().shape           , task.amm.getIdxs()[0][0])
+def print_amm_ptrs(amm):
+  print(amm.getCentroids().shape      , amm.getCentroids()[0][0])
+  print(amm.getSplitdims().shape      , amm.getSplitdims()[0][0])
+  print(amm.getSplitvals().shape      , amm.getSplitvals()[0][0])
+  print(amm.getEncode_scales().shape  , amm.getEncode_scales()[0][0])
+  print(amm.getEncode_offsets().shape , amm.getEncode_offsets()[0][0])
+  print(amm.getIdxs().shape           , amm.getIdxs()[0][0])
+  
+  print(np.min(amm.getCentroids(      ) ) , np.max(amm.getCentroids( ) ))
+  print(np.min(amm.getSplitdims(      ) ) , np.max(amm.getSplitdims( ) ))
+  print(np.min(amm.getSplitvals(      ) ) , np.max(amm.getSplitvals( ) ))
+  print(np.min(amm.getEncode_scales(  ) ) , np.max(amm.getEncode_scales( ) ))
+  print(np.min(amm.getEncode_offsets( ) ) , np.max(amm.getEncode_offsets( ) ))
+  print(np.min(amm.getIdxs(           ) ) , np.max(amm.getIdxs( ) ))
 
+def copy_python_to_amm(py_est, amm):
+  amm.setCentroids(py_est.enc.centroids)
+  #64x1
+  reshape_split_lists=lambda att: np.array([
+    getattr(i, att)
+    for a in py_est.enc.splits_lists 
+    for i in a]).reshape(64,1)
+  
+  d=reshape_split_lists('dim').astype(np.uint32)
+  amm.setSplitdims(d)
+  assert np.all(amm.getSplitdims() == d)
+  
+  ## len 240 in 3d: 16x[1, 2, 4, 8]
+  #amm.setSplitvals([v 
+  #                       for a in py_est.enc.splits_lists 
+  #                       for i in a
+  #                       for v in i.vals])
+  #amm.setSplitvals(reshape_split_lists('vals'))
+  
+  s=reshape_split_lists('scaleby').astype(np.float32)
+  amm.setEncode_scales(s)
+  assert np.all(amm.getEncode_scales()==s)
+  
+  o=reshape_split_lists('offset').astype(np.float32)
+  amm.setEncode_offsets(o)
+  assert np.all(amm.getEncode_offsets() == o)
+  #amm.setIdxs(.astype(int))
+  
+  #segfaults when py_est is changed; but I should be able to delete?
+  #del py_est 
+
+print_amm_ptrs(task.amm)
+copy_python_to_amm(est, task.amm)
+print_amm_ptrs(task.amm)
+
+s=timer()
 task.run_matmul(True)
-#%% Set from python
-task.amm.setCentroids(est.enc.centroids)
-
-#64x1
-reshape_split_lists=lambda att: np.array([
-  getattr(i, att)
-  for a in est.enc.splits_lists 
-  for i in a]).reshape(64,1)
-
-task.amm.setSplitdims(reshape_split_lists('dim'))
-                      
-## len 240 in 3d: 16x[1, 2, 4, 8]
-#task.amm.setSplitvals([v 
-#                       for a in est.enc.splits_lists 
-#                       for i in a
-#                       for v in i.vals])
-#task.amm.setSplitvals(reshape_split_lists('vals'))
-task.amm.setEncode_scales(reshape_split_lists('scaleby'))
-task.amm.setEncode_offsets(reshape_split_lists('offset'))
-                          
-#task.amm.setIdxs()
-
-#task.run_matmul(True)
+#.output() Returns a memoryview of type ColMatrix which is Eigen::Matrix<T, Eigen::Dynamic, 1>;
+Y_hat=np.asarray(task.output().data)
+e=timer()
+num_dists=Y_hat.size
+print(f'time to run mithral with python bindings: {e-s:.7f}s',
+      f'Throughput: {num_dists/(e-s):.2E}/sec',
+      f'Python Throughtput {old_throughput:.2E}')
+print(f"{100*np.sum(unfitted_Y!=Y_hat)/Y_hat.size:.1f}% changed after encoding") 
+print(f'new time {e-s} vs old time {old_t}')
+print("1-R^2: ",1-r2_score(Y, Y_hat))
+#%%
+copy_python_to_amm(est, task.amm)
+for i in range(99):
+  #task.amm.setCentroidsCopyData(est.enc.centroids)
+  task.amm.setCentroids(est.enc.centroids)
+  task.run_matmul(True)
+  print(i)
 #%%
 #fitted = ['ncodebooks', 'ncentroids', 'A_enc', 'luts', 'offset', 'scale'] #works to copy in python(?)
 #things you're supposed to learn per mithral_amm_task constructor

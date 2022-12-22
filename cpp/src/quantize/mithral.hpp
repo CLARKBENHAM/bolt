@@ -120,7 +120,7 @@ struct mithral_amm {
                 
         nsplits_per_codebook(4),
         total_nsplits(ncodebooks * nsplits_per_codebook),
-        
+
         N(N), D(D), M(M), ncodebooks(ncodebooks), centroids(centroids),
         splitdims(splitdims), splitvals(splitvals),
         encode_scales(encode_scales), encode_offsets(encode_offsets),
@@ -135,6 +135,7 @@ struct mithral_amm {
     void encode(const InputT* X) {
         // TODO add strides to these funcs so that we can pad number
         // of rows, so scan can rely on nrows being a multiple of 32
+        std::cout << "splitdims: " << splitdims[0] << "\nsplitval: " << splitvals[0] << "\nencode_scales: " << encode_scales[0]  << "\nencodeoffsets: " << encode_offsets[0] << "\n" << std::endl;
         mithral_encode(
             X, N, D, splitdims, splitvals, encode_scales,
             encode_offsets, ncodebooks, tmp_codes.data());

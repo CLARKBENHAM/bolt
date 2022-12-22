@@ -145,57 +145,84 @@ PYBIND11_MODULE(mithral_wrapped, m) {
         .def("getCentroids", [](mithral_amm<float> &self) {
             const int rows=self.ncodebooks*16;
             const int cols=self.D;
-            Map<Eigen::MatrixXf> mf(const_cast<float*>(self.centroids),rows,cols);
+            Eigen::Map<Eigen::MatrixXf> mf(const_cast<float*>(self.centroids),rows,cols);
             return mf; 
         })
         .def("getSplitdims", [](mithral_amm<float> &self) {
             const int rows=self.total_nsplits;
             const int cols=1;
-            Map<Eigen::Matrix<uint32_t, -1,-1>> mf(const_cast<uint32_t*>(self.splitdims),rows,cols);
+            Eigen::Map<Eigen::Matrix<uint32_t, -1,-1>> mf(const_cast<uint32_t*>(self.splitdims),rows,cols);
             return mf; 
         })
         .def("getSplitvals", [](mithral_amm<float> &self) {
             const int rows=self.total_nsplits;
             const int cols=1;
-            Map<Eigen::Matrix<int8_t, -1, -1>> mf(const_cast<int8_t*>(self.splitvals),rows,cols);
+            Eigen::Map<Eigen::Matrix<int8_t, -1, -1>> mf(const_cast<int8_t*>(self.splitvals),rows,cols);
             return mf; 
         })
         .def("getEncode_scales", [](mithral_amm<float> &self) {
             const int rows=self.total_nsplits;
             const int cols=1;
-            Map<Eigen::MatrixXf> mf(const_cast<scale_t*>(self.encode_scales),rows,cols);
+            Eigen::Map<Eigen::MatrixXf> mf(const_cast<scale_t*>(self.encode_scales),rows,cols);
             return mf; 
         })
         .def("getEncode_offsets", [](mithral_amm<float> &self) {
             const int rows=self.total_nsplits;
             const int cols=1;
-            Map<Eigen::MatrixXf> mf(const_cast<offset_t*>(self.encode_offsets),rows,cols);
+            Eigen::Map<Eigen::MatrixXf> mf(const_cast<offset_t*>(self.encode_offsets),rows,cols);
             return mf; 
         })
         .def("getIdxs", [](mithral_amm<float> &self) {
             const int rows=self.nnz_per_centroid;
             const int cols=self.ncodebooks;
-            Map<Eigen::MatrixXi> mf(const_cast<int*>(self.idxs),rows,cols);
+            Eigen::Map<Eigen::MatrixXi> mf(const_cast<int*>(self.idxs),rows,cols);
             return mf; 
         })
     
         //setters, Can change pointer to new value; can't overwrite existing. Fine to Copy by value here, only used initally
+        // passing references causes segfault when change data on python side. Passing raw errors initally
+        // Make a copy from reference?
         .def("setCentroids", [](mithral_amm<float> &self , py::array_t<float> mf) {
             self.centroids =const_cast<const float*>(mf.data());
         })
-        .def("setSplitdims", [](mithral_amm<float> &self , py::array_t<uint32_t> mf) {
+        // Still throws segfaults. Assume it's bad data to mithral is the issue
+        .def("setCentroidsCopyData", [](mithral_amm<float> &self , py::array_t<float> mf) {
+            //py::array_t<float> *t=new py::array_t<float>(mf);
+            //delete self.centroids; //runs forever?
+            // self.centroids =const_cast<const float*>(mf.data());
+         
+         
+            py::buffer_info buf1 = mf.request();
+            /* No pointer is passed, so NumPy will allocate the buffer */
+            auto result = py::array_t<float>(buf1.size);
+
+            py::buffer_info buf3 = result.request();
+
+            float *ptr1 = static_cast<float *>(buf1.ptr);
+            float *ptr3 = static_cast<float *>(buf3.ptr);
+            for (size_t idx = 0; idx < buf1.shape[0]; idx++)
+                ptr3[idx] = ptr1[idx];
+
+            self.centroids=ptr3;
+        })
+        .def("setSplitdims", [](mithral_amm<float> &self , py::array_t<uint32_t>& mf) {
+            //py::array_t<uint32_t> t=py::array_t<uint32_t>(mf);
             self.splitdims =const_cast<const uint32_t*>(mf.data());
         })
-        .def("setSplitvals", [](mithral_amm<float> &self , py::array_t<int8_t> mf) {
+        .def("setSplitvals", [](mithral_amm<float> &self , py::array_t<int8_t>& mf) {
+            //py::array_t<int8_t> t=py::array_t<int8_t>(mf);
             self.splitvals =const_cast<const int8_t*>(mf.data());
         })
-        .def("setEncode_scales", [](mithral_amm<float> &self , py::array_t<scale_t> mf) {
+        .def("setEncode_scales", [](mithral_amm<float> &self , py::array_t<scale_t>& mf) {
+            //py::array_t<scale_t> t=py::array_t<scale_t>(mf);
             self.encode_scales =const_cast<const scale_t*>(mf.data());
         })
-        .def("setEncode_offsets", [](mithral_amm<float> &self , py::array_t<offset_t> mf) {
+        .def("setEncode_offsets", [](mithral_amm<float> &self , py::array_t<offset_t>& mf) {
+            //py::array_t<offset_t> t=py::array_t<offset_t>(mf);
             self.encode_offsets =const_cast<const offset_t*>(mf.data());
         })
-        .def("setIdxs", [](mithral_amm<float> &self , py::array_t<int> mf) {
+        .def("setIdxs", [](mithral_amm<float> &self , py::array_t<int>& mf) {
+            //py::array_t<int> t=py::array_t<int>(mf);
             self.idxs =const_cast<const int*>(mf.data());
         })
         

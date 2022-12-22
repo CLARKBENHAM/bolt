@@ -88,7 +88,8 @@
 			"set": "cpp",
 			"stack": "cpp",
 			"string": "cpp",
-			"sparsecore": "cpp"
+			"sparsecore": "cpp",
+			"alignedvector3": "cpp"
 		}
 	}
 }
