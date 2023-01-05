@@ -311,6 +311,7 @@ class MithralMatmul(VQMatmul):
     def set_B(self, B):
         self.luts, self.offset, self.scale = self.enc.encode_Q(B.T)
 
+    #What outputs Y_hat matrix 
     def __call__(self, A, B):
         if self.A_enc is None:
             self.set_A(A)

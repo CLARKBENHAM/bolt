@@ -89,7 +89,11 @@
 			"stack": "cpp",
 			"string": "cpp",
 			"sparsecore": "cpp",
-			"alignedvector3": "cpp"
+			"alignedvector3": "cpp",
+			"fft": "cpp",
+			"mprealsupport": "cpp",
+			"matrixfunctions": "cpp",
+			"*.traits": "cpp"
 		}
 	}
 }

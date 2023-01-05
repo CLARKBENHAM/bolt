@@ -5,6 +5,7 @@ import re
 import os
 import sys
 import io
+import math
 from contextlib import contextmanager
 import ctypes
 import tempfile
@@ -12,6 +13,7 @@ from collections import namedtuple
 from timeit import default_timer as timer
 import numpy as np
 from sklearn.metrics import r2_score
+from operator import itemgetter
 
 from python import vq_amm
 sys.path.append(os.path.join(os.path.dirname(__file__), ".."))
@@ -120,7 +122,7 @@ lutconsts= [-1] #[-1, 1, 2, 4]
 N,D,M=10000, 512, 100
 kCifar100TaskShape=mithral_wrapped.MatmulTaskShape(N,D,M, "Cifar100")
 kCaltechTaskShape0=kCifar100TaskShape
-
+print("warn: using Cifar100")
 
 #% Get raw C++ speeds
 float32_profile = lambda : mithral_wrapped._profile_mithral(kCaltechTaskShape0, ncodebooks, lutconsts)
@@ -193,6 +195,7 @@ print(X.shape, Q.shape)
 
 
 #% Copy Python Learned values to C++
+#hparams_dict = {'ncodebooks': 4*ncodebooks[0], 'lut_work_const': lutconsts[0]} #increase codebooks with more outputs?
 hparams_dict = {'ncodebooks': ncodebooks[0], 'lut_work_const': lutconsts[0]}
 est = vq_amm.MithralMatmul(**hparams_dict)
 #Num centroids is fixed at 16; so can always fit in L1?    
@@ -218,7 +221,9 @@ est_attr=['A_enc',
   'set_B']
 #for t in est_attr:
 #  print(t, est.__getattribute__(t))
+py_est = est
 #%%
+#import copy
 def print_amm_ptrs(amm):
   print(amm.getCentroids().shape      , amm.getCentroids()[0][0])
   print(amm.getSplitdims().shape      , amm.getSplitdims()[0][0])
@@ -234,32 +239,59 @@ def print_amm_ptrs(amm):
   print(np.min(amm.getEncode_offsets( ) ) , np.max(amm.getEncode_offsets( ) ))
   print(np.min(amm.getIdxs(           ) ) , np.max(amm.getIdxs( ) ))
 
-def copy_python_to_amm(py_est, amm):
-  amm.setCentroids(py_est.enc.centroids)
-  #64x1
-  reshape_split_lists=lambda att: np.array([
+
+def reshape_split_lists(enc, att: str):
+  #(ncodebooks x 4) for values for ncodebook subspaces to pick from the 4 levels 
+  #aka ncodebooks by the 4 dims to split on for each output
+  num_elem=enc.ncodebooks*4
+  return np.array([
     getattr(i, att)
-    for a in py_est.enc.splits_lists 
-    for i in a]).reshape(64,1)
+    for a in enc.splits_lists 
+    for i in a]).reshape(num_elem,1)
+
+def extract_py_vars(est):
+  raw_splitvals=[[v for i in a for v in i.vals]
+                     for a in est.enc.splits_lists 
+                     ]
+  default_sz = max(map(len, raw_splitvals))
+  num_pad = 2**math.ceil(np.log2(default_sz)) - default_sz
+  ## 3d: ncodebooks x[1, 2, 4, 8], i idx is 2^{i-1} value can split nodes for all the ncodebook subspaces
+  #C++ expected 0 padded values out to 16 per BST of split values
+  #TODO Is this right row/column order?
+  splitvals=np.array([np.pad(l, (0,num_pad))
+            for l in raw_splitvals
+            ])
+  return {
+      #x/indexes
+      "splitdims": reshape_split_lists(est.enc, 'dim').astype(np.uint32),
+      "splitvals": splitvals,
+      "encode_scales":reshape_split_lists(est.enc, 'scaleby').astype(np.float32),
+      "encode_offsets":reshape_split_lists(est.enc, 'offset').astype(np.float32),
+  	  #q/lut
+      "centroids": est.enc.centroids,
+      #"idxs": , #only with a sparse LUT
+      #cpp out_offset_sum/scale is set by results at _compute_offsets_scale_from_mins_maxs, after done learning luts in mithral_lut_dense&mithral_lut_spares. no need to copy
+      #So do you need to modify c output by scale/sum to be correct?
+      #py 
+      "out_offset_sum":est.offset,
+      "out_scale": est.scale,
+  }
+
+def copy_python_to_amm(py_est, amm):
+  py_vars = extract_py_vars(py_est)
+  [c, d,v,eo,es] = itemgetter('centroids', 'splitdims','splitvals', 'encode_offsets', 'encode_scales')(py_vars)
+  amm.setCentroids(c)
   
-  d=reshape_split_lists('dim').astype(np.uint32)
   amm.setSplitdims(d)
   assert np.all(amm.getSplitdims() == d)
   
-  ## len 240 in 3d: 16x[1, 2, 4, 8]
-  #amm.setSplitvals([v 
-  #                       for a in py_est.enc.splits_lists 
-  #                       for i in a
-  #                       for v in i.vals])
-  #amm.setSplitvals(reshape_split_lists('vals'))
+  amm.setSplitvals(v)
   
-  s=reshape_split_lists('scaleby').astype(np.float32)
-  amm.setEncode_scales(s)
-  assert np.all(amm.getEncode_scales()==s)
+  amm.setEncode_scales(es)
+  assert np.all(amm.getEncode_scales()==es)
   
-  o=reshape_split_lists('offset').astype(np.float32)
-  amm.setEncode_offsets(o)
-  assert np.all(amm.getEncode_offsets() == o)
+  amm.setEncode_offsets(eo)
+  assert np.all(amm.getEncode_offsets() == eo)
   #amm.setIdxs(.astype(int))
   
   #segfaults when py_est is changed; but I should be able to delete?
@@ -273,6 +305,10 @@ s=timer()
 task.run_matmul(True)
 #.output() Returns a memoryview of type ColMatrix which is Eigen::Matrix<T, Eigen::Dynamic, 1>;
 Y_hat=np.asarray(task.output().data)
+#336:mithral.hpp; out_scale calculated by 255*2^-math.ceil(log2(max_scale_val))
+# out_offset_sum is sum of min offset across each codebook
+Y_hat=Y_hat/ task.amm.out_scale #((255 - 1e-10) * 2**math.floor(math.log2(task.amm.out_scale)))
+Y_hat+=task.amm.out_offset_sum
 e=timer()
 num_dists=Y_hat.size
 print(f'time to run mithral with python bindings: {e-s:.7f}s',
@@ -284,11 +320,13 @@ print("1-R^2: ",1-r2_score(Y, Y_hat))
 #%%
 copy_python_to_amm(est, task.amm)
 for i in range(99):
-  #task.amm.setCentroidsCopyData(est.enc.centroids)
-  task.amm.setCentroids(est.enc.centroids)
+  task.amm.setCentroidsCopyData(est.enc.centroids)
+  #task.amm.setCentroids(est.enc.centroids)
   task.run_matmul(True)
   print(i)
 #%%
+print({k: v.shape if isinstance(v, np.ndarray) else v 
+       for k,v in extract_py_vars(est).items()})
 #fitted = ['ncodebooks', 'ncentroids', 'A_enc', 'luts', 'offset', 'scale'] #works to copy in python(?)
 #things you're supposed to learn per mithral_amm_task constructor
 #        amm(N_padded, D, M, ncodebooks, centroids.data(),
@@ -356,10 +394,41 @@ task.amm.luts=est.luts
 
 #Test Copied correctly
 Q2=Q+np.random.rand(*Q.shape)*np.mean(Q)/10
-#%%
+#%% Scrap
 
 mithral_wrapped.mithral_amm_float(N,D,M, ncodebooks,centroids, splitdims, splitvals, encode_scales, encode_offsets, idxs, nnz_per_centroid)
 
 #Do you need the constructor params or just the intermedia values?
 
-
+#def copy_python_to_amm_safe(py_est, amm):
+#  #py_est = copy.deepcopy(py_e)
+#  amm.setCentroidsCopyData(py_est.enc.centroids)
+#  #64x1
+#  reshape_split_lists=lambda att: np.array([
+#    getattr(i, att)
+#    for a in py_est.enc.splits_lists 
+#    for i in a]).reshape(64,1)
+#  print('hi')
+#  d=reshape_split_lists('dim').astype(np.uint32)
+#  amm.setSplitdimsCopyData(d)
+#  assert np.all(amm.getSplitdims() == d)
+#  print('ran')
+#  
+#  ## len 240 in 3d: 16x[1, 2, 4, 8]
+#  #amm.setSplitvals([v 
+#  #                       for a in py_est.enc.splits_lists 
+#  #                       for i in a
+#  #                       for v in i.vals])
+#  #amm.setSplitvals(reshape_split_lists('vals'))
+#  
+#  s=reshape_split_lists('scaleby').astype(np.float32)
+#  amm.setEncode_scalesCopyData(s)
+#  assert np.all(amm.getEncode_scales()==s)
+#  
+#  o=reshape_split_lists('offset').astype(np.float32)
+#  amm.setEncode_offsetsCopyData(o)
+#  assert np.all(amm.getEncode_offsets() == o)
+#  #amm.setIdxsCopyData(.astype(int))
+#  
+#  #segfaults when py_est is changed; but I should be able to delete?
+#  #del py_est 
