@@ -155,7 +155,7 @@ PYBIND11_MODULE(mithral_wrapped, m) {
             return mf; 
         })
         .def("getSplitvals", [](mithral_amm<float> &self) {
-            const int rows=self.ncodebooks;
+            const int rows=self.ncodebooks; //different from rest, why?
             const int cols=16;
             Eigen::Map<Eigen::Matrix<int8_t, -1, -1>> mf(const_cast<int8_t*>(self.splitvals),rows,cols);
             return mf; 

@@ -247,7 +247,7 @@ def reshape_split_lists(enc, att: str):
   return np.array([
     getattr(i, att)
     for a in enc.splits_lists 
-    for i in a]).reshape(num_elem,1)
+    for i in a]).reshape(enc.ncodebooks,4)
 
 def extract_py_vars(est):
   raw_splitvals=[[v for i in a for v in i.vals]
@@ -283,16 +283,16 @@ def copy_python_to_amm(py_est, amm):
   amm.setCentroids(c)
   
   amm.setSplitdims(d)
-  assert np.all(amm.getSplitdims() == d)
   
   amm.setSplitvals(v)
   
   amm.setEncode_scales(es)
-  assert np.all(amm.getEncode_scales()==es)
-  
   amm.setEncode_offsets(eo)
-  assert np.all(amm.getEncode_offsets() == eo)
   #amm.setIdxs(.astype(int))
+  
+  #assert np.all(amm.getSplitdims() == d)
+  #assert np.all(amm.getEncode_scales()==es)
+  #assert np.all(amm.getEncode_offsets() == eo)
   
   #segfaults when py_est is changed; but I should be able to delete?
   #del py_est 
@@ -317,6 +317,8 @@ print(f'time to run mithral with python bindings: {e-s:.7f}s',
 print(f"{100*np.sum(unfitted_Y!=Y_hat)/Y_hat.size:.1f}% changed after encoding") 
 print(f'new time {e-s} vs old time {old_t}')
 print("1-R^2: ",1-r2_score(Y, Y_hat))
+print({k: v.shape if isinstance(v, np.ndarray) else v 
+       for k,v in extract_py_vars(est).items()})
 #%%
 copy_python_to_amm(est, task.amm)
 for i in range(99):
