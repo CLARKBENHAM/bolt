@@ -42,17 +42,18 @@ RUN unzip libtorch-shared-with-deps-latest.zip && rm libtorch-shared-with-deps-l
 ###%% Things added to get Bolt working; based on: https://github.com/dblalock/bolt/blob/master/BUILD.md
 RUN apt-get install \
 	-y \
+	apt-transport-https \
 	apt-utils \
 	build-essential \
 	clang-3.9 \
 	clang \
+	curl \
+	gnupg \
 	libc++-dev \
 	libeigen3-dev \
 	swig \
 	sudo \
-	apt-transport-https \
-	curl \
-	gnupg \
+	valgrind \
 	&& curl -s https://packagecloud.io/install/repositories/github/git-lfs/script.deb.sh | sudo bash \
 	&& apt-get install  git-lfs
 
