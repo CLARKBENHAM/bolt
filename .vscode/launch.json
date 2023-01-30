@@ -36,5 +36,23 @@
       },
 			"preLaunchTask": "build_bazel_main_dbg"
 		},
+		{
+      "name": "Debug",
+     // "type": "lldb",
+			"type": "cppdbg",
+      "request": "launch",
+      "program": "/root/local/miniconda/bin/python",
+      "args": [],
+      "cwd": "${fileDirname}", //"${workspaceFolder}/build"
+    },
+    { 
+      "name": "Debug Attach",
+      //"type": "lldb",
+			"type": "cppdbg",
+      "request": "attach",
+      "program": "/root/local/miniconda/bin/python", 
+      "processId": "${command:pickProcess}",
+      "MIMode": "gdb"
+  },
 	]
 }

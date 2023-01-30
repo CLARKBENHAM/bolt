@@ -53,7 +53,6 @@ RUN apt-get install \
 	libeigen3-dev \
 	swig \
 	sudo \
-	valgrind \
 	&& curl -s https://packagecloud.io/install/repositories/github/git-lfs/script.deb.sh | sudo bash \
 	&& apt-get install  git-lfs
 

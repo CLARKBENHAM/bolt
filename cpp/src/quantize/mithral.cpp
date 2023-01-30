@@ -62,7 +62,7 @@ void mithral_encode(
         }
         split_idx += nsplits_per_codebook;
 
-        for (int b = 0; b < nblocks; b++) { // for each block
+        for (int b = 0; b < nblocks; b++) { // for each block. 256 simd is to process 32 rows in parrallel on 1 splitix of 1 code book and return 8bit encodes for each row.
             __m256i codes = _mm256_setzero_si256();
             #pragma unroll
             for (int s = 0; s < nsplits_per_codebook; s++) {

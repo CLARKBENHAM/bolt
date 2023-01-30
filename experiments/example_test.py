@@ -16,12 +16,20 @@ from sklearn.metrics import r2_score
 from operator import itemgetter
 
 from python import vq_amm
-sys.path.append(os.path.join(os.path.dirname(__file__), ".."))
+try:
+  repo_path=os.path.join(os.path.dirname(__file__), "..")
+except:
+  #added except since when vscode auto-restarts after crashes, __file__ isn't defined
+  repo_path = os.path.abspath('')[:os.path.abspath('').index('/bolt/') + 6]
+sys.path.append(repo_path)
 from cpp import mithral_wrapped
 
-# Test pybind11 wrapped correctly
-assert 5 == mithral_wrapped.add(2, 3)
+import functools
+print = functools.partial(print, flush=True)
 
+print(" Test pybind11 wrapped correctly")
+assert 5 == mithral_wrapped.add(2, 3)
+print("mithral ran")
 
 #So C++ code's printout redirected to python
 libc = ctypes.CDLL(None)
@@ -160,7 +168,6 @@ for data in [float32_data, int8_data]:
 new_throughput = min(map(lambda r: max(r.trial_best_mult_ops_per_sec), int8_data)) #type of operation matters
 new_time = max(map(lambda r: min(r.trial_best_sec_times), int8_data)) #type of operation matters
 
-
 #% Speed of Python C++ Bindings
 task=mithral_wrapped.mithral_amm_task_float(N,D,M, ncodebooks[0], lutconsts[0])
 X=task.X
@@ -221,9 +228,8 @@ est_attr=['A_enc',
   'set_B']
 #for t in est_attr:
 #  print(t, est.__getattribute__(t))
-py_est = est
-#%%
-#import copy
+print(f"current pid:    {os.getpid()}")
+#%% utils
 def print_amm_ptrs(amm):
   print(amm.getCentroids().shape      , amm.getCentroids()[0][0])
   print(amm.getSplitdims().shape      , amm.getSplitdims()[0][0])
@@ -250,12 +256,13 @@ def reshape_split_lists(enc, att: str):
     for i in a]).reshape(enc.ncodebooks,4)
 
 def extract_py_vars(est):
+  #py est splitvals is jagged 3d (ncodebooks x 4 x [1,2,4,8]). Reshape to (ncodebooks x 16)
   raw_splitvals=[[v for i in a for v in i.vals]
                      for a in est.enc.splits_lists 
                      ]
   default_sz = max(map(len, raw_splitvals))
   num_pad = 2**math.ceil(np.log2(default_sz)) - default_sz
-  ## 3d: ncodebooks x[1, 2, 4, 8], i idx is 2^{i-1} value can split nodes for all the ncodebook subspaces
+  ## i idx is 2^{i-1} value can split nodes for all the ncodebook subspaces
   #C++ expected 0 padded values out to 16 per BST of split values
   #TODO Is this right row/column order?
   splitvals=np.array([np.pad(l, (0,num_pad))
@@ -268,19 +275,25 @@ def extract_py_vars(est):
       "encode_scales":reshape_split_lists(est.enc, 'scaleby').astype(np.float32),
       "encode_offsets":reshape_split_lists(est.enc, 'offset').astype(np.float32),
   	  #q/lut
-      "centroids": est.enc.centroids,
+      "centroids": est.enc.centroids.astype(np.float32),
       #"idxs": , #only with a sparse LUT
       #cpp out_offset_sum/scale is set by results at _compute_offsets_scale_from_mins_maxs, after done learning luts in mithral_lut_dense&mithral_lut_spares. no need to copy
       #So do you need to modify c output by scale/sum to be correct?
       #py 
-      "out_offset_sum":est.offset,
-      "out_scale": est.scale,
+      "out_offset_sum": np.float32(est.offset),
+      "out_scale": np.float32(est.scale),
   }
 
+print({k: v.shape if isinstance(v, np.ndarray) else v 
+       for k,v in extract_py_vars(est).items()})
+
+print({k: np.isnan(v).sum() if isinstance(v, np.ndarray) else 0
+       for k,v in extract_py_vars(est).items()})
+#%%
 def copy_python_to_amm(py_est, amm):
   py_vars = extract_py_vars(py_est)
-  [c, d,v,eo,es] = itemgetter('centroids', 'splitdims','splitvals', 'encode_offsets', 'encode_scales')(py_vars)
-  amm.setCentroids(c)
+  [c, d,v,eo,es, osum, oscale] = itemgetter('centroids', 'splitdims','splitvals', 'encode_offsets', 'encode_scales', 'out_offset_sum', 'out_scale')(py_vars)
+  #amm.setCentroids(c)
   
   amm.setSplitdims(d)
   
@@ -288,6 +301,9 @@ def copy_python_to_amm(py_est, amm):
   
   amm.setEncode_scales(es)
   amm.setEncode_offsets(eo)
+  
+  #amm.out_offset_sum = osum
+  #amm.out_scale  = oscale
   #amm.setIdxs(.astype(int))
   
   #assert np.all(amm.getSplitdims() == d)
@@ -296,11 +312,14 @@ def copy_python_to_amm(py_est, amm):
   
   #segfaults when py_est is changed; but I should be able to delete?
   #del py_est 
-
+  
 print_amm_ptrs(task.amm)
+print("copying python")
 copy_python_to_amm(est, task.amm)
+print("copied python")
 print_amm_ptrs(task.amm)
 
+print("starting:      task.run_matmul(True)")
 s=timer()
 task.run_matmul(True)
 #.output() Returns a memoryview of type ColMatrix which is Eigen::Matrix<T, Eigen::Dynamic, 1>;
@@ -317,8 +336,6 @@ print(f'time to run mithral with python bindings: {e-s:.7f}s',
 print(f"{100*np.sum(unfitted_Y!=Y_hat)/Y_hat.size:.1f}% changed after encoding") 
 print(f'new time {e-s} vs old time {old_t}')
 print("1-R^2: ",1-r2_score(Y, Y_hat))
-print({k: v.shape if isinstance(v, np.ndarray) else v 
-       for k,v in extract_py_vars(est).items()})
 #%%
 copy_python_to_amm(est, task.amm)
 for i in range(99):

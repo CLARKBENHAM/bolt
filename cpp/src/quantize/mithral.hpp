@@ -144,7 +144,7 @@ struct mithral_amm {
 
     void lut(const float* Q) {
         // printf("nnz_per_centroid=%d ", nnz_per_centroid);
-        if (nnz_per_centroid > 0) {
+        if (nnz_per_centroid > 0) { //always positive in mithral_amm_task constructor; profile_amm_old.hpp would change to negative for some tests
             mithral_lut_sparse(Q, M, D, ncodebooks, centroids,
                 idxs, nnz_per_centroid, out_offset_sum, out_scale,
                 tmp_luts_f32.data(), luts.data());

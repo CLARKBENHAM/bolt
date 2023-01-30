@@ -1,6 +1,7 @@
+#include "test/scrap/reproduce_valgrind.hpp"
+
 #include "src/quantize/mithral.hpp"
 #include "test/quantize/profile_amm.hpp"
-// #include "src/external/eigen/Eigen/Core"
 
 # include <eigen3/Eigen/Core>
 #include <pybind11/pybind11.h>
@@ -42,7 +43,10 @@ namespace py = pybind11;
 
 PYBIND11_MODULE(mithral_wrapped, m) {
     m.doc() = "pybind11 plugin that wrapps mithral"; // Optional module docstring
-    
+
+    // -- reproduce_valgrind_error.hpp--
+    m.def("test_valgrind", &test_valgrind, "mre of valgrind error");
+
    //---Mithral.hpp---
     m.def("add", &add, "A function that adds two numbers");
     m.def("sub", &sub, "A function that subs two numbers");
@@ -142,33 +146,34 @@ PYBIND11_MODULE(mithral_wrapped, m) {
         .def_readwrite("idxs"             , &mithral_amm<float>::idxs) //shape:  nnz_per_centroid * ncodebooks // used if lut sparse (nnz_per_centroid>0)
         .def_readwrite("nnz_per_centroid" , &mithral_amm<float>::nnz_per_centroid) //value: lut_work_const > 0 ? lut_work_const * D / ncodebooks : D //lut_work_const an element from lutconsts {-1 , 1 , 2 , 4}
         //return COPY from pointers, but you have to know shape going in. Read won't trigger page faults(!?!)
-        .def("getCentroids", [](mithral_amm<float> &self) {
-            const int rows=self.ncodebooks*16;
+        .def("getCentroids", [](mithral_amm<float> &self) { 
+            //TODO: return in 3d
+            const int rows=self.ncodebooks*16;//k=16
             const int cols=self.D;
             Eigen::Map<Eigen::MatrixXf> mf(const_cast<float*>(self.centroids),rows,cols);
             return mf; 
         })
         .def("getSplitdims", [](mithral_amm<float> &self) {
-            const int rows=self.total_nsplits;
-            const int cols=1;
+            const int rows=self.ncodebooks;
+            const int cols=4;
             Eigen::Map<Eigen::Matrix<uint32_t, -1,-1>> mf(const_cast<uint32_t*>(self.splitdims),rows,cols);
             return mf; 
         })
         .def("getSplitvals", [](mithral_amm<float> &self) {
-            const int rows=self.ncodebooks; //different from rest, why?
-            const int cols=16;
+            const int rows=self.ncodebooks; 
+            const int cols=16; //15 plus a padded 0 (or just 15?)
             Eigen::Map<Eigen::Matrix<int8_t, -1, -1>> mf(const_cast<int8_t*>(self.splitvals),rows,cols);
             return mf; 
         })
         .def("getEncode_scales", [](mithral_amm<float> &self) {
-            const int rows=self.total_nsplits;
-            const int cols=1;
+            const int rows=self.ncodebooks;
+            const int cols=4;
             Eigen::Map<Eigen::MatrixXf> mf(const_cast<scale_t*>(self.encode_scales),rows,cols);
             return mf; 
         })
         .def("getEncode_offsets", [](mithral_amm<float> &self) {
-            const int rows=self.total_nsplits;
-            const int cols=1;
+            const int rows=self.ncodebooks;
+            const int cols=4;
             Eigen::Map<Eigen::MatrixXf> mf(const_cast<offset_t*>(self.encode_offsets),rows,cols);
             return mf; 
         })
@@ -290,8 +295,8 @@ PYBIND11_MODULE(mithral_wrapped, m) {
         .def_readwrite("tmp_luts_f32"       , &mithral_amm<float>::tmp_luts_f32)
         .def_readwrite("luts"               , &mithral_amm<float>::luts)
         // outputs
-        .def_readonly("out_offset_sum"      , &mithral_amm<float>::out_offset_sum)
-        .def_readonly("out_scale"           , &mithral_amm<float>::out_scale)
+        .def_readwrite("out_offset_sum"      , &mithral_amm<float>::out_offset_sum)
+        .def_readwrite("out_scale"           , &mithral_amm<float>::out_scale)
         .def_readonly("out_mat"             , &mithral_amm<float>::out_mat) //eigen object
            
         ;
