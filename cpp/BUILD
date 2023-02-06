@@ -1,6 +1,7 @@
 load("@pybind11_bazel//:build_defs.bzl", "pybind_extension")
 
-# defaults to gcc. Should be compiled with: CC=g++ bazel build :mithral_wrapped --strip=never
+#compiled with: CC=g++ bazel build :mithral_wrapped --strip=never #strip never if want debug mode
+# defaults to gcc. 
 
 #WARN: -Og and -g for debugging while testing; to try and fix valgrind's unhandled instruction byte on vectorization code: add '-DBUILD_NATIVE=OFF' , remove '-ffast-math'  , change -march=native instead of native
 #   if remove march=native then add -max2
@@ -8,7 +9,7 @@ load("@pybind11_bazel//:build_defs.bzl", "pybind_extension")
 # removed NDEBUG to include asserts (still didn't add line info to debugs)
 
 #copts_debug = ['-Og', '-march=native',  '-mavx', '-std=c++14', '-ggdb3', '-fno-inline'] #still no symbols
-copts_debug = ['-Og', '-march=native',  '-mavx', '-std=c++14', '-g', '-gdwarf-2'] #gdb v7 needs dwarf4
+copts_debug = ['-Og', '-march=native',  '-mavx', '-std=c++14', '-g', '-gdwarf-2'] #gdb v7 needs dwarf4, even w -fno-inline-functions eigen.data() is inlined?
 #copts_debug = ['-O0','-march=native',  '-mavx', '-std=c++14', '-s'] #testing only
 defines_debug = ['BLAZE']
 

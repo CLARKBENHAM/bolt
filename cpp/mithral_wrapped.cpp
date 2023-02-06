@@ -110,7 +110,7 @@ PYBIND11_MODULE(mithral_wrapped, m) {
        );
         
     //amm so can call attributes from mithtral_amm_task.output()
-    using traits = mithral_input_type_traits<float>;
+    using traits = mithral_input_type_traits<float>; //TODO  try int16 or 8? faster
     using scale_t = typename traits::encoding_scales_type;
     using offset_t = typename traits::encoding_offsets_type;
     using output_t = typename traits::output_type;
@@ -146,48 +146,49 @@ PYBIND11_MODULE(mithral_wrapped, m) {
         .def_readwrite("idxs"             , &mithral_amm<float>::idxs) //shape:  nnz_per_centroid * ncodebooks // used if lut sparse (nnz_per_centroid>0)
         .def_readwrite("nnz_per_centroid" , &mithral_amm<float>::nnz_per_centroid) //value: lut_work_const > 0 ? lut_work_const * D / ncodebooks : D //lut_work_const an element from lutconsts {-1 , 1 , 2 , 4}
         //return COPY from pointers, but you have to know shape going in. Read won't trigger page faults(!?!)
+        // Python Thinks it's getting in row major but Eigen returns in column major by default
         .def("getCentroids", [](mithral_amm<float> &self) { 
             //TODO: return in 3d
             const int rows=self.ncodebooks*16;//k=16
             const int cols=self.D;
-            Eigen::Map<Eigen::MatrixXf> mf(const_cast<float*>(self.centroids),rows,cols);
+            Eigen::Map<Eigen::Matrix<float, -1, -1, Eigen::RowMajor>> mf(const_cast<float*>(self.centroids),rows,cols);
             return mf; 
         })
         .def("getSplitdims", [](mithral_amm<float> &self) {
             const int rows=self.ncodebooks;
             const int cols=4;
-            Eigen::Map<Eigen::Matrix<uint32_t, -1,-1>> mf(const_cast<uint32_t*>(self.splitdims),rows,cols);
+            Eigen::Map<Eigen::Matrix<uint32_t, -1,-1, Eigen::RowMajor>> mf(const_cast<uint32_t*>(self.splitdims),rows,cols);
             return mf; 
         })
         .def("getSplitvals", [](mithral_amm<float> &self) {
             const int rows=self.ncodebooks; 
             const int cols=16; //15 plus a padded 0 (or just 15?)
-            Eigen::Map<Eigen::Matrix<int8_t, -1, -1>> mf(const_cast<int8_t*>(self.splitvals),rows,cols);
+            Eigen::Map<Eigen::Matrix<int8_t, -1, -1, Eigen::RowMajor>> mf(const_cast<int8_t*>(self.splitvals),rows,cols);
             return mf; 
         })
         .def("getEncode_scales", [](mithral_amm<float> &self) {
             const int rows=self.ncodebooks;
             const int cols=4;
-            Eigen::Map<Eigen::MatrixXf> mf(const_cast<scale_t*>(self.encode_scales),rows,cols);
+            Eigen::Map<Eigen::Matrix<float, -1, -1, Eigen::RowMajor>> mf(const_cast<scale_t*>(self.encode_scales),rows,cols);
             return mf; 
         })
         .def("getEncode_offsets", [](mithral_amm<float> &self) {
             const int rows=self.ncodebooks;
             const int cols=4;
-            Eigen::Map<Eigen::MatrixXf> mf(const_cast<offset_t*>(self.encode_offsets),rows,cols);
+            Eigen::Map<Eigen::Matrix<float, -1, -1, Eigen::RowMajor>> mf(const_cast<offset_t*>(self.encode_offsets),rows,cols);
             return mf; 
         })
         .def("getIdxs", [](mithral_amm<float> &self) {
             const int rows=self.nnz_per_centroid;
             const int cols=self.ncodebooks;
-            Eigen::Map<Eigen::MatrixXi> mf(const_cast<int*>(self.idxs),rows,cols);
+            Eigen::Map<Eigen::Matrix<int, -1, -1, Eigen::RowMajor>> mf(const_cast<int*>(self.idxs),rows,cols);
             return mf; 
         })
     
         //setters, Can change pointer to new value; can't overwrite existing. Fine to Copy by value here, only used initally
         // passing references causes segfault when change data on python side. Passing raw errors initally
         // Make a copy from reference?
-        .def("setCentroids", [](mithral_amm<float> &self , py::array_t<float> mf) {
+        .def("setCentroids", [](mithral_amm<float> &self , py::array_t<float, py::array::c_style> mf) {
             self.centroids =const_cast<const float*>(mf.data());
         })
         // Still throws segfaults. Assume it's bad data to mithral is the issue
@@ -210,84 +211,84 @@ PYBIND11_MODULE(mithral_wrapped, m) {
 
             self.centroids=ptr3;
         })
-        .def("setSplitdims", [](mithral_amm<float> &self , py::array_t<uint32_t>& mf) {
+        .def("setSplitdims", [](mithral_amm<float> &self , py::array_t<uint32_t, py::array::c_style>& mf) {
             //py::array_t<uint32_t> t=py::array_t<uint32_t>(mf);
             //delete self.splitdims; //segfaults when run with delete or delete[], but maybe not. Unsure when does or doesn't
             self.splitdims =const_cast<const uint32_t*>(mf.data());
         })
-        .def("setSplitvals", [](mithral_amm<float> &self , py::array_t<int8_t>& mf) {
+        .def("setSplitvals", [](mithral_amm<float> &self , py::array_t<int8_t, py::array::c_style>& mf) {
             //py::array_t<int8_t> t=py::array_t<int8_t>(mf);
             //delete self.splitvals;
             self.splitvals =const_cast<const int8_t*>(mf.data());
         })
-        .def("setEncode_scales", [](mithral_amm<float> &self , py::array_t<scale_t>& mf) {
+        .def("setEncode_scales", [](mithral_amm<float> &self , py::array_t<scale_t, py::array::c_style>& mf) {
             //py::array_t<scale_t> t=py::array_t<scale_t>(mf);
             //delete self.encode_scales;
             self.encode_scales =const_cast<const scale_t*>(mf.data());
         })
-        .def("setEncode_offsets", [](mithral_amm<float> &self , py::array_t<offset_t>& mf) {
+        .def("setEncode_offsets", [](mithral_amm<float> &self , py::array_t<offset_t, py::array::c_style>& mf) {
             //py::array_t<offset_t> t=py::array_t<offset_t>(mf);
             //delete self.encode_offsets;
             self.encode_offsets =const_cast<const offset_t*>(mf.data());
         })
-        .def("setIdxs", [](mithral_amm<float> &self , py::array_t<int>& mf) {
+        .def("setIdxs", [](mithral_amm<float> &self , py::array_t<int, py::array::c_style>& mf) {
             //py::array_t<int> t=py::array_t<int>(mf);
             //delete self.idxs;
             self.idxs =const_cast<const int*>(mf.data());
         })
-        // // Doesn't work to prevent segfaults. Is it cause I'm not copying over the right data?
-        // Since these are pointers to const data can't overwrite existing, have to point to entierly new object causing memleak
-         .def("setSplitdimsCopyData", [](mithral_amm<float> &self , py::array_t<uint32_t>& mf) {
-            // delete [] self.splitdims; //but freeing here causes segfault?
-             py::buffer_info buf1 = mf.request();
-             auto result = py::array_t<uint32_t>(buf1.size);
-             py::buffer_info buf3 = result.request();
-             uint32_t *ptr1 = static_cast<uint32_t *>(buf1.ptr);
-             uint32_t *ptr3 = static_cast<uint32_t *>(buf3.ptr);
-             for (size_t idx = 0; idx < buf1.shape[0]; idx++)
-                 ptr3[idx] = ptr1[idx];
-             self.splitdims=ptr3;
-         })
-         .def("setSplitvalsCopyData", [](mithral_amm<float> &self , py::array_t<int8_t>& mf) {
-             py::buffer_info buf1 = mf.request();
-             auto result = py::array_t<int8_t>(buf1.size);
-             py::buffer_info buf3 = result.request();
-             int8_t *ptr1 = static_cast<int8_t *>(buf1.ptr);
-             int8_t *ptr3 = static_cast<int8_t *>(buf3.ptr);
-             for (size_t idx = 0; idx < buf1.shape[0]; idx++)
-                 ptr3[idx] = ptr1[idx];
-             self.splitvals=ptr3;
-         })
-         .def("setEncode_scalesCopyData", [](mithral_amm<float> &self , py::array_t<scale_t>& mf) {
-             py::buffer_info buf1 = mf.request();
-             auto result = py::array_t<scale_t>(buf1.size);
-             py::buffer_info buf3 = result.request();
-             scale_t *ptr1 = static_cast<scale_t *>(buf1.ptr);
-             scale_t *ptr3 = static_cast<scale_t *>(buf3.ptr);
-             for (size_t idx = 0; idx < buf1.shape[0]; idx++)
-                 ptr3[idx] = ptr1[idx];
-             self.encode_scales=ptr3;
-         })
-         .def("setEncode_offsetsCopyData", [](mithral_amm<float> &self , py::array_t<offset_t>& mf) {
-             py::buffer_info buf1 = mf.request();
-             auto result = py::array_t<offset_t>(buf1.size);
-             py::buffer_info buf3 = result.request();
-             offset_t *ptr1 = static_cast<offset_t *>(buf1.ptr);
-             offset_t *ptr3 = static_cast<offset_t *>(buf3.ptr);
-             for (size_t idx = 0; idx < buf1.shape[0]; idx++)
-                 ptr3[idx] = ptr1[idx];
-             self.encode_offsets=ptr3;
-         })
-         .def("setIdxsCopyData", [](mithral_amm<float> &self , py::array_t<int>& mf) {
-             py::buffer_info buf1 = mf.request();
-             auto result = py::array_t<int>(buf1.size);
-             py::buffer_info buf3 = result.request();
-             int *ptr1 = static_cast<int *>(buf1.ptr);
-             int *ptr3 = static_cast<int *>(buf3.ptr);
-             for (size_t idx = 0; idx < buf1.shape[0]; idx++)
-                 ptr3[idx] = ptr1[idx];
-             self.idxs=ptr3;
-         })
+        //// // Doesn't work to prevent segfaults. Is it cause I'm not copying over the right data?
+        //// Since these are pointers to const data can't overwrite existing, have to point to entierly new object causing memleak
+        // .def("setSplitdimsCopyData", [](mithral_amm<float> &self , py::array_t<uint32_t>& mf) {
+        //    // delete [] self.splitdims; //but freeing here causes segfault?
+        //     py::buffer_info buf1 = mf.request();
+        //     auto result = py::array_t<uint32_t>(buf1.size);
+        //     py::buffer_info buf3 = result.request();
+        //     uint32_t *ptr1 = static_cast<uint32_t *>(buf1.ptr);
+        //     uint32_t *ptr3 = static_cast<uint32_t *>(buf3.ptr);
+        //     for (size_t idx = 0; idx < buf1.shape[0]; idx++)
+        //         ptr3[idx] = ptr1[idx];
+        //     self.splitdims=ptr3;
+        // })
+        // .def("setSplitvalsCopyData", [](mithral_amm<float> &self , py::array_t<int8_t>& mf) {
+        //     py::buffer_info buf1 = mf.request();
+        //     auto result = py::array_t<int8_t>(buf1.size);
+        //     py::buffer_info buf3 = result.request();
+        //     int8_t *ptr1 = static_cast<int8_t *>(buf1.ptr);
+        //     int8_t *ptr3 = static_cast<int8_t *>(buf3.ptr);
+        //     for (size_t idx = 0; idx < buf1.shape[0]; idx++)
+        //         ptr3[idx] = ptr1[idx];
+        //     self.splitvals=ptr3;
+        // })
+        // .def("setEncode_scalesCopyData", [](mithral_amm<float> &self , py::array_t<scale_t>& mf) {
+        //     py::buffer_info buf1 = mf.request();
+        //     auto result = py::array_t<scale_t>(buf1.size);
+        //     py::buffer_info buf3 = result.request();
+        //     scale_t *ptr1 = static_cast<scale_t *>(buf1.ptr);
+        //     scale_t *ptr3 = static_cast<scale_t *>(buf3.ptr);
+        //     for (size_t idx = 0; idx < buf1.shape[0]; idx++)
+        //         ptr3[idx] = ptr1[idx];
+        //     self.encode_scales=ptr3;
+        // })
+        // .def("setEncode_offsetsCopyData", [](mithral_amm<float> &self , py::array_t<offset_t>& mf) {
+        //     py::buffer_info buf1 = mf.request();
+        //     auto result = py::array_t<offset_t>(buf1.size);
+        //     py::buffer_info buf3 = result.request();
+        //     offset_t *ptr1 = static_cast<offset_t *>(buf1.ptr);
+        //     offset_t *ptr3 = static_cast<offset_t *>(buf3.ptr);
+        //     for (size_t idx = 0; idx < buf1.shape[0]; idx++)
+        //         ptr3[idx] = ptr1[idx];
+        //     self.encode_offsets=ptr3;
+        // })
+        // .def("setIdxsCopyData", [](mithral_amm<float> &self , py::array_t<int>& mf) {
+        //     py::buffer_info buf1 = mf.request();
+        //     auto result = py::array_t<int>(buf1.size);
+        //     py::buffer_info buf3 = result.request();
+        //     int *ptr1 = static_cast<int *>(buf1.ptr);
+        //     int *ptr3 = static_cast<int *>(buf3.ptr);
+        //     for (size_t idx = 0; idx < buf1.shape[0]; idx++)
+        //         ptr3[idx] = ptr1[idx];
+        //     self.idxs=ptr3;
+        // })
         
         // storage for intermediate values
         .def_readwrite("tmp_codes"          , &mithral_amm<float>::tmp_codes) 
