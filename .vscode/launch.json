@@ -46,13 +46,25 @@
       "cwd": "${fileDirname}", //"${workspaceFolder}/build"
     },
     { 
-      "name": "Debug Attach",
+      "name": "Mithral Debug Attach gdb to py proc",
       //"type": "lldb",
 			"type": "cppdbg",
       "request": "attach",
       "program": "/root/local/miniconda/bin/python", 
       "processId": "${command:pickProcess}",
-      "MIMode": "gdb"
-  },
+      "MIMode": "gdb",
+      //"miDebuggerPath": "/usr/bin/gdb",
+			"setupCommands": [
+        {
+          "description": "Enable pretty-printing for gdb",
+          "text": "-enable-pretty-printing",
+          "ignoreFailures": true
+        }
+      ],
+			"sourceFileMap": {
+        "/proc/self/cwd": "/home/cbenham/bolt/cpp", //have to use absolute path
+      },
+			//"preLaunchTask": "build_bazel_mithral_dbg" //to attach to running python process, mithral must already be built
+		},
 	]
 }

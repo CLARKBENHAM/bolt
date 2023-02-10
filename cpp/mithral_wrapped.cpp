@@ -71,9 +71,9 @@ PYBIND11_MODULE(mithral_wrapped, m) {
        .def_readonly("M", &MatmulTaskShape::M) 
         .def("__repr__",
         [](const MatmulTaskShape &a) {
-            std::cout << "PPPprinting:    " << a.name << std::endl; 
+            //std::cout << "PPPprinting:    " << a.name << std::endl; 
             std::string name(a.name);
-            std::cout << std::string("from C++: <example.MatmulTaskShape: name: " + name + " sizes: " + std::to_string(a.N) + " ," + std::to_string(a.D) + ", " + std::to_string(a.M) + ">") << std::endl;
+            //std::cout << std::string("from C++: <example.MatmulTaskShape: name: " + name + " sizes: " + std::to_string(a.N) + " ," + std::to_string(a.D) + ", " + std::to_string(a.M) + ">") << std::endl;
             return std::string("<example.MatmulTaskShape: name: " + name + " sizes: " + std::to_string(a.N) + " ," + std::to_string(a.D) + ", " + std::to_string(a.M) + ">");
         }
         );
@@ -137,7 +137,7 @@ PYBIND11_MODULE(mithral_wrapped, m) {
         //  Need to copy these pointers to Python as arrays. Eigen matricies are auto-converted to numpy
         // nsplits_per_codebook=4; scan_block_nrows=32; lut_sz=16; CodebookTileSz=2; RowTileSz = 2 or 1
         // nblocks = N/scan_block_nrows; total_nsplits = ncodebooks * nsplits_per_codebook;centroids_codebook_stride=ncentroids*ncols; ncentroids=16
-
+        
         .def_readwrite("centroids"        , &mithral_amm<float>::centroids)  //shape: centroids_codebook_stride * ncodebooks
         .def_readwrite("splitdims"        , &mithral_amm<float>::splitdims) //shape: total_nsplits
         .def_readwrite("splitvals"        , &mithral_amm<float>::splitvals) //shape:  total_nsplits
@@ -190,26 +190,42 @@ PYBIND11_MODULE(mithral_wrapped, m) {
         // Make a copy from reference?
         .def("setCentroids", [](mithral_amm<float> &self , py::array_t<float, py::array::c_style> mf) {
             self.centroids =const_cast<const float*>(mf.data());
+            
+            //  //Make sure I'm copying aligned data
+            //void* p = mf.data();
+            //std::size_t space = mf.size();
+            //align(32, space, p, space); //don't care space is decremented
+            //assert(p);
+            //self.centroids = const_cast<const float*>(p);
         })
-        // Still throws segfaults. Assume it's bad data to mithral is the issue
-        .def("setCentroidsCopyData", [](mithral_amm<float> &self , py::array_t<float> mf) {
+        //WARN: doesn't work yet. How to project from 3d to 2d/1d need for C++?
+        .def("setCentroidsCopyData", [](mithral_amm<float> &self , py::array_t<float, py::array::c_style> mf) {
             //py::array_t<float> *t=new py::array_t<float>(mf);
-            //delete self.centroids; //runs forever?
-            // self.centroids =const_cast<const float*>(mf.data());
-         
          
             py::buffer_info buf1 = mf.request();
-            /* No pointer is passed, so NumPy will allocate the buffer */
-            auto result = py::array_t<float>(buf1.size);
 
-            py::buffer_info buf3 = result.request();
+            // void* ptr = 0; //Wrong, need to be within the function space of rest of pointers
+            // std::size_t size_remain = buf1.size ; //should be reference?
+            // align(32, buf1.size, ptr, size_remain);
+            // const float * centroid_ptr = add_const_t<float*>(static_cast<float*>(ptr));
+            // // py::array_t<float, 16> result2 = py::array_t<float>(buf1.size);
+            //py::buffer_info buf3 = py::array_t<float>(buf1.size, const_cast<float*>(centroid_ptr)).request();
+
+            /* If no pointer is passed, NumPy will allocate the buffer */
+            auto sz = sizeof(py::array_t<float>(buf1.size));//make sure sz%32==0?
+            void * ptr = aligned_alloc(32, sz); //todo better way to get sizeof?
+            assert(reinterpret_cast<uintptr_t>(ptr)%32 ==0);
+            const float * centroid_ptr = add_const_t<float*>(ptr);
+            py::buffer_info buf3 = py::array_t<float>(buf1.size, const_cast<float*>(centroid_ptr)).request();
 
             float *ptr1 = static_cast<float *>(buf1.ptr);
-            float *ptr3 = static_cast<float *>(buf3.ptr);
-            for (size_t idx = 0; idx < buf1.shape[0]; idx++)
+            float *ptr3 = static_cast<float *>(buf3.ptr); //align this one?
+            assert(reinterpret_cast<uintptr_t>(ptr3)%32 ==0);
+            for (size_t idx = 0; idx < buf1.size; idx++) {
                 ptr3[idx] = ptr1[idx];
-
-            self.centroids=ptr3;
+            }
+            //delete[] self.centroids; //don't need to free old memeory, since pointer is really object(?)
+            self.centroids=const_cast<const float*>(ptr3);
         })
         .def("setSplitdims", [](mithral_amm<float> &self , py::array_t<uint32_t, py::array::c_style>& mf) {
             //py::array_t<uint32_t> t=py::array_t<uint32_t>(mf);
@@ -238,7 +254,7 @@ PYBIND11_MODULE(mithral_wrapped, m) {
         })
         //// // Doesn't work to prevent segfaults. Is it cause I'm not copying over the right data?
         //// Since these are pointers to const data can't overwrite existing, have to point to entierly new object causing memleak
-        // .def("setSplitdimsCopyData", [](mithral_amm<float> &self , py::array_t<uint32_t>& mf) {
+        // .def("setSplitdimsCopyData", [](mithral_amm<float> &self , py::array_t<uint32_t, py::array::c_style>& mf) {
         //    // delete [] self.splitdims; //but freeing here causes segfault?
         //     py::buffer_info buf1 = mf.request();
         //     auto result = py::array_t<uint32_t>(buf1.size);
@@ -249,7 +265,7 @@ PYBIND11_MODULE(mithral_wrapped, m) {
         //         ptr3[idx] = ptr1[idx];
         //     self.splitdims=ptr3;
         // })
-        // .def("setSplitvalsCopyData", [](mithral_amm<float> &self , py::array_t<int8_t>& mf) {
+        // .def("setSplitvalsCopyData", [](mithral_amm<float> &self , py::array_t<int8_t, py::array::c_style>& mf) {
         //     py::buffer_info buf1 = mf.request();
         //     auto result = py::array_t<int8_t>(buf1.size);
         //     py::buffer_info buf3 = result.request();
@@ -259,7 +275,7 @@ PYBIND11_MODULE(mithral_wrapped, m) {
         //         ptr3[idx] = ptr1[idx];
         //     self.splitvals=ptr3;
         // })
-        // .def("setEncode_scalesCopyData", [](mithral_amm<float> &self , py::array_t<scale_t>& mf) {
+        // .def("setEncode_scalesCopyData", [](mithral_amm<float> &self , py::array_t<scale_t, py::array::c_style>& mf) {
         //     py::buffer_info buf1 = mf.request();
         //     auto result = py::array_t<scale_t>(buf1.size);
         //     py::buffer_info buf3 = result.request();
@@ -269,7 +285,7 @@ PYBIND11_MODULE(mithral_wrapped, m) {
         //         ptr3[idx] = ptr1[idx];
         //     self.encode_scales=ptr3;
         // })
-        // .def("setEncode_offsetsCopyData", [](mithral_amm<float> &self , py::array_t<offset_t>& mf) {
+        // .def("setEncode_offsetsCopyData", [](mithral_amm<float> &self , py::array_t<offset_t, py::array::c_style>& mf) {
         //     py::buffer_info buf1 = mf.request();
         //     auto result = py::array_t<offset_t>(buf1.size);
         //     py::buffer_info buf3 = result.request();
@@ -279,7 +295,7 @@ PYBIND11_MODULE(mithral_wrapped, m) {
         //         ptr3[idx] = ptr1[idx];
         //     self.encode_offsets=ptr3;
         // })
-        // .def("setIdxsCopyData", [](mithral_amm<float> &self , py::array_t<int>& mf) {
+        // .def("setIdxsCopyData", [](mithral_amm<float> &self , py::array_t<int, py::array::c_style>& mf) {
         //     py::buffer_info buf1 = mf.request();
         //     auto result = py::array_t<int>(buf1.size);
         //     py::buffer_info buf3 = result.request();

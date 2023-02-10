@@ -711,7 +711,9 @@ void sparse_lut_f32(const float* Q, int nrows, int ncols, int ncodebooks,
                         vbroadcasted[rr] = _mm256_set1_ps(qval);
                     }
                     for (int s = 0; s < nstripes; s++) {
-                        auto centroids_col = _mm256_load_ps(centroids_ptrs[cc]);
+                        auto centroids_col = _mm256_load_ps(centroids_ptrs[cc]); //segfaults since aligned to 16 but not 32?
+                        const uintptr_t addr = reinterpret_cast<const uintmax_t>(centroids_ptrs[cc]);
+                        assert((addr%32)==0); // this didn't fail if centroid copy works, so 32 byte alignment is  nessisary
                         centroids_ptrs[cc] += packet_width;
                         for (int rr = 0; rr < RowTileSz; rr++) {
                             accumulators[cc][rr][s] = fma(vbroadcasted[rr],

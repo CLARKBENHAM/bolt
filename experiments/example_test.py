@@ -166,9 +166,11 @@ for data in [float32_data, int8_data]:
 #new_throughput = max(map(lambda r: max(r.trial_best_mult_ops_per_sec), float32_data))
 new_throughput = min(map(lambda r: max(r.trial_best_mult_ops_per_sec), int8_data)) #type of operation matters
 new_time = max(map(lambda r: min(r.trial_best_sec_times), int8_data)) #type of operation matters
+#print(f'new (cpp) throughput {new_throughput:.2E} vs Old Throughput: {old_throughput:.2E}')
 
 #% Speed of Python C++ Bindings
 N,D,M = 1024, 64,100 #Python output size doesn't match input size
+ncodebooks=[4]
 task=mithral_wrapped.mithral_amm_task_float(N,D,M, ncodebooks[0], lutconsts[0])
 #easy debugging
 X= np.stack([np.array([i%16]*D) for i in range(N)])
@@ -185,9 +187,10 @@ Y_hat=np.asarray(task.output().data)
 e=timer()
 num_dists=Y_hat.size
 print(f'time to run mithral with python bindings: {e-s:.7f}s',
-      f'Throughput: {num_dists/(e-s):.2E}/sec')
+      f'    Throughput: {num_dists/(e-s):.2E}/sec')
 print(f"{100*np.sum(Y_hat1!=Y_hat)/Y_hat.size:.1f}% changed after encoding") 
 unfitted_Y=Y_hat
+print(np.asarray(task.output().data))
 
 # Compare speeds to Python default (inaccurate since C++ binds don't learn params)
 # print(type(X), type(Q), X.shape, Q.shape, np.mean(X), np.mean(Q))
@@ -196,14 +199,11 @@ Y=X@Q
 e=timer()
 old_t=e-s #in cpu sec's
 old_throughput=(num_dists)/old_t
-print(f'new_throughput {new_throughput:.2E} vs Old Throughput: {old_throughput:.2E}')
-print(f'new time {new_time} vs old time {old_t}')
-print(f"New way Times Faster: {new_throughput/old_throughput}")
-
-print("1-R^2: ",1-r2_score(Y, Y_hat))
-print(r2_score(Y, Y_hat1), r2_score(Y, Y_hat))
-print(np.mean(Y), np.mean(Y_hat))
-print(X.shape, Q.shape)
+#print(f"New way Times Faster: {new_throughput/old_throughput}")
+#print(f'new (cpp) time {new_time} vs old time {old_t}')
+#print("old vs Mithral cpp 1-R^2: ",1-r2_score(Y, Y_hat))
+#print(np.mean(Y), np.mean(Y_hat))
+#print(X.shape, Q.shape)
 
 
 #% Copy Python Learned values to C++
@@ -233,6 +233,7 @@ est_attr=['A_enc',
   'set_B']
 #for t in est_attr:
 #  print(t, est.__getattribute__(t))
+
 print(f"current pid:    {os.getpid()}")
 #%% utils
 def print_amm_ptrs(amm):
@@ -299,15 +300,16 @@ print({k: v.shape if isinstance(v, np.ndarray) else v
 py_vars = extract_py_vars(est)
 [c, d,v,eo,es, osum, oscale] = itemgetter('centroids', 'splitdims','splitvals', 'encode_offsets', 'encode_scales', 'out_offset_sum', 'out_scale')(py_vars)
 #copying keeps order for these, but are the luts and codes the same?
-print(est.A_enc, est.luts)
-print(list(map(lambda i: (np.min(i), np.max(i)), [est.A_enc, est.luts])))
+#print(est.A_enc, est.luts)
+#print(list(map(lambda i: (np.min(i), np.max(i)), [est.A_enc, est.luts])))
 #codes are >255 but c++ is uint8 type?
 #%%
 def copy_python_to_amm(py_est, amm):
   py_vars = extract_py_vars(py_est)
   [c, d,v,eo,es, osum, oscale] = itemgetter('centroids', 'splitdims','splitvals', 'encode_offsets', 'encode_scales', 'out_offset_sum', 'out_scale')(py_vars)
 
-  amm.setCentroids(c) #Mithral should learn this?
+  #amm.setCentroids(c) 
+  amm.setCentroidsCopyData(c)
   
   amm.setSplitdims(d)
   
@@ -340,8 +342,8 @@ print("starting:      task.run_matmul(True)")
 s=timer()
 task.run_matmul(True)
 #.output() Returns a memoryview of type ColMatrix which is Eigen::Matrix<T, Eigen::Dynamic, 1>;
-Y_hat=np.asarray(task.output().data)
-#336:mithral.hpp; out_scale calculated by 255*2^-math.ceil(log2(max_scale_val))
+Y_hat=task.output()#==task.amm.out_mat
+#336:mithral.hpp; out_scale calcuated by 255*2^-math.ceil(log2(max_scale_val))
 # out_offset_sum is sum of min offset across each codebook
 #Y_hat=Y_hat/ task.amm.out_scale #((255 - 1e-10) * 2**math.floor(math.log2(task.amm.out_scale)))
 #Y_hat+=task.amm.out_offset_sum #is this needed?
@@ -356,7 +358,7 @@ print("1-R^2: ",1-r2_score(Y, Y_hat))
 
 #why true? np.all(task.output()[3104:,50:]==0)
 #assert(np.all(task.amm.codes == est.A_enc)) #false why?
-#assert(np.all(task.amm.luts.shape==est.luts)) #wrong dims
+#assert(np.all(task.amm.luts.shape==est.luts.shape)) #wrong dims
 
 #%%
 copy_python_to_amm(est, task.amm)
