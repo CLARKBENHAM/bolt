@@ -93,7 +93,8 @@
 			"fft": "cpp",
 			"mprealsupport": "cpp",
 			"matrixfunctions": "cpp",
-			"*.traits": "cpp"
+			"*.traits": "cpp",
+			"polynomials": "cpp"
 		}
 	}
 }
