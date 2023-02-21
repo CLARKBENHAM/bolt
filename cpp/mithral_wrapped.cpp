@@ -149,6 +149,8 @@ PYBIND11_MODULE(mithral_wrapped, m) {
         // Python Thinks it's getting in row major but Eigen returns in column major by default
         .def("getCentroids", [](mithral_amm<float> &self) { 
             //TODO: return in 3d
+            // Why don't these rows/cols need to be flipped to match c, centroids is also ColMatrix.
+            // Is the Python not returned in corect format?
             const int rows=self.ncodebooks*16;//k=16
             const int cols=self.D;
             Eigen::Map<Eigen::Matrix<float, -1, -1, Eigen::RowMajor>> mf(const_cast<float*>(self.centroids),rows,cols);
@@ -161,8 +163,10 @@ PYBIND11_MODULE(mithral_wrapped, m) {
             return mf; 
         })
         .def("getSplitvals", [](mithral_amm<float> &self) {
-            const int rows=self.ncodebooks; 
-            const int cols=16; //15 plus a padded 0 (or just 15?)
+            // rows/cols flipped since original is ColMatrix
+            const int cols=16; //15 pad 1
+            //const int rows=self.ncodebooks;  //python
+            const int rows=self.ncodebooks*4; // what's in C++, nsplits; why?
             Eigen::Map<Eigen::Matrix<int8_t, -1, -1, Eigen::RowMajor>> mf(const_cast<int8_t*>(self.splitvals),rows,cols);
             return mf; 
         })
@@ -189,14 +193,8 @@ PYBIND11_MODULE(mithral_wrapped, m) {
         // passing references causes segfault when change data on python side. Passing raw errors initally
         // Make a copy from reference?
         .def("setCentroids", [](mithral_amm<float> &self , py::array_t<float, py::array::c_style> mf) {
-            self.centroids =const_cast<const float*>(mf.data());
-            
-            //  //Make sure I'm copying aligned data
-            //void* p = mf.data();
-            //std::size_t space = mf.size();
-            //align(32, space, p, space); //don't care space is decremented
-            //assert(p);
-            //self.centroids = const_cast<const float*>(p);
+            //The first 8 nums were wrong once(?!)
+            self.centroids =const_cast<const float*>(mf.data()); 
         })
         //WARN: doesn't work yet. How to project from 3d to 2d/1d need for C++?
         .def("setCentroidsCopyData", [](mithral_amm<float> &self , py::array_t<float, py::array::c_style> mf) {
@@ -212,20 +210,27 @@ PYBIND11_MODULE(mithral_wrapped, m) {
             //py::buffer_info buf3 = py::array_t<float>(buf1.size, const_cast<float*>(centroid_ptr)).request();
 
             /* If no pointer is passed, NumPy will allocate the buffer */
-            auto sz = sizeof(py::array_t<float>(buf1.size));//make sure sz%32==0?
-            void * ptr = aligned_alloc(32, sz); //todo better way to get sizeof?
-            assert(reinterpret_cast<uintptr_t>(ptr)%32 ==0);
-            const float * centroid_ptr = add_const_t<float*>(ptr);
-            py::buffer_info buf3 = py::array_t<float>(buf1.size, const_cast<float*>(centroid_ptr)).request();
+            auto sz = sizeof(py::array_t<float>(buf1.size));
+            auto sz2 = buf1.size*sizeof(float);
+            if(sz!=sz2) {
+                cout<< sz << ' ' << sz2 << endl;
+            }
+            //is size right?
+            float * centroid_ptr = static_cast<float*>(aligned_alloc(32, sz2)); 
+            assert(reinterpret_cast<uintptr_t>(centroid_ptr)%32 ==0);
+            //float *  = (ptr);
+            //Creates an object, but instead of using the new object we make request to get buffer info of the new object.
+            //py::buffer_info buf3 = py::array_t<float>(buf1.size, const_cast<float*>(centroid_ptr)).request(); //which constructor is a 
+            //assert(buf3.ptr == centroid_ptr); //fails since py::array_t creates a new object
 
             float *ptr1 = static_cast<float *>(buf1.ptr);
-            float *ptr3 = static_cast<float *>(buf3.ptr); //align this one?
-            assert(reinterpret_cast<uintptr_t>(ptr3)%32 ==0);
             for (size_t idx = 0; idx < buf1.size; idx++) {
-                ptr3[idx] = ptr1[idx];
+                centroid_ptr[idx] = ptr1[idx]; //can I just assign the data like this?
             }
-            //delete[] self.centroids; //don't need to free old memeory, since pointer is really object(?)
-            self.centroids=const_cast<const float*>(ptr3);
+            //delete[] self.centroids; 
+            //free(const_cast<float*>(self.centroids));  //free'ing here errors python the first time; but self.centroids isn't python memory yet?
+            //is centroids supposed to be in column order? Doubtfull since c++ pointer
+            self.centroids=const_cast<const float*>(centroid_ptr);
         })
         .def("setSplitdims", [](mithral_amm<float> &self , py::array_t<uint32_t, py::array::c_style>& mf) {
             //py::array_t<uint32_t> t=py::array_t<uint32_t>(mf);
