@@ -126,7 +126,7 @@ struct mithral_amm {
         encode_scales(encode_scales), encode_offsets(encode_offsets),
         idxs(idxs), nnz_per_centroid(nnz_per_centroid),
         tmp_codes(N, ncodebooks), codes(N, ncodebooks),
-        tmp_luts_f32(N, ncodebooks * lut_sz), luts(N, ncodebooks * lut_sz),
+        tmp_luts_f32(M, ncodebooks * lut_sz), luts(M, ncodebooks * lut_sz), //why did luts use N not M? When M then tmp_luts_f32 is good but luts is all 0s, but that's probably something else
         out_mat(N, M)
     {
         luts.setRandom();  // so profiling without LUT creation isn't undefined
@@ -630,6 +630,8 @@ void dense_lut_f32_fused(const float* Q, int nrows, int ncols, int ncodebooks,
         mins, maxs, ncodebooks, out_offsets, out_offset_sum, out_scale);
 }
 
+// Here nrows/ncols mean the number of elements in each row/col; flipped from 'total number of' rows/cols in constructor
+// Why nrows/ncols are swapped when passed into this fn
 template<int CodebookTileSz=2, int RowTileSz=2>
 void sparse_lut_f32(const float* Q, int nrows, int ncols, int ncodebooks,
                      const float* centroids,
@@ -653,7 +655,7 @@ void sparse_lut_f32(const float* Q, int nrows, int ncols, int ncodebooks,
 
     auto q_row_stride = ncols;
     auto idxs_codebook_stride = nnz_per_centroid;
-    auto centroids_codebook_stride = ncentroids * ncols;
+    auto centroids_codebook_stride = ncentroids * ncols; //num elem in each col of Q since centroids not orthogonal, take full X row
     auto out_row_stride = ncodebooks * lut_sz;
     auto out_codebook_stride = lut_sz;
 
@@ -711,9 +713,8 @@ void sparse_lut_f32(const float* Q, int nrows, int ncols, int ncodebooks,
                         vbroadcasted[rr] = _mm256_set1_ps(qval);
                     }
                     for (int s = 0; s < nstripes; s++) {
-                        auto centroids_col = _mm256_load_ps(centroids_ptrs[cc]); //segfaults since aligned to 16 but not 32?
+                        auto centroids_col = _mm256_load_ps(centroids_ptrs[cc]); 
                         const uintptr_t addr = reinterpret_cast<const uintmax_t>(centroids_ptrs[cc]);
-                        assert((addr%32)==0); // this didn't fail if centroid copy works, so 32 byte alignment is  nessisary
                         centroids_ptrs[cc] += packet_width;
                         for (int rr = 0; rr < RowTileSz; rr++) {
                             accumulators[cc][rr][s] = fma(vbroadcasted[rr],
