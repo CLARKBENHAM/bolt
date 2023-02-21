@@ -169,8 +169,8 @@ new_time = max(map(lambda r: min(r.trial_best_sec_times), int8_data)) #type of o
 #print(f'new (cpp) throughput {new_throughput:.2E} vs Old Throughput: {old_throughput:.2E}')
 
 #% Speed of Python C++ Bindings
-N,D,M = 1024, 64,100 #Python output size doesn't match input size
-ncodebooks=[4]
+N,D,M = 4096, 64,128 #Python output size doesn't match input size
+ncodebooks=[2]
 task=mithral_wrapped.mithral_amm_task_float(N,D,M, ncodebooks[0], lutconsts[0])
 #easy debugging
 X= np.stack([np.array([i%16]*D) for i in range(N)])
@@ -234,7 +234,7 @@ est_attr=['A_enc',
 #for t in est_attr:
 #  print(t, est.__getattribute__(t))
 
-print(f"current pid:    {os.getpid()}")
+print(f"current pid:    {os.getpid()}\n")
 #%% utils
 def print_amm_ptrs(amm):
   print("amm shapes and [0][0]")
@@ -278,13 +278,16 @@ def extract_py_vars(est):
             ]).astype(np.int8)
   return {
       #x/indexes
-      "splitdims": reshape_split_lists(est.enc, 'dim').astype(np.uint32),
+      "splitdims": reshape_split_lists(est.enc, 'dim').astype(np.uint32), #these are what's called idxs in paper?
       "splitvals": splitvals,
-      "encode_scales":reshape_split_lists(est.enc, 'scaleby').astype(np.float32), # change types w/ mithral
-      "encode_offsets":reshape_split_lists(est.enc, 'offset').astype(np.float32), # change types w/ mithral
-  	  #q/lut
+      "encode_scales":reshape_split_lists(est.enc, 'scaleby').astype(np.float32), 
+      "encode_offsets":reshape_split_lists(est.enc, 'offset').astype(np.float32), 
+      #q/lut
       "centroids": est.enc.centroids.astype(np.float32),
-      #"idxs": , #only with a sparse LUT
+      #"idxs": ,  #Only need to change if sparse matrix
+      # # if lut_work_const then c++ is row (ncodebooks,D) set to ncodebooks*[range(D)], else its ncodebooks*[sorted(permucation(range(D), nnz_per_centroid))]
+      #Python encode_X (idxs?!) = offsets into raveled indxs + idxs=[[i%16]*ncodebooks for i in range(N)]), the offset is added to each idxs row
+      #C++ uses indxs for Q and Python for X(?!)
       #cpp out_offset_sum/scale is set by results at _compute_offsets_scale_from_mins_maxs, after done learning luts in mithral_lut_dense&mithral_lut_spares. no need to copy
       #py 
       "out_offset_sum": np.float32(est.offset),
@@ -303,19 +306,34 @@ py_vars = extract_py_vars(est)
 #print(est.A_enc, est.luts)
 #print(list(map(lambda i: (np.min(i), np.max(i)), [est.A_enc, est.luts])))
 #codes are >255 but c++ is uint8 type?
+
+##getCentroids matches with set centroids, but the R^2 is still wrong
+#for _c in [c, task.amm.getCentroids()]:
+#  print(_c)
+#  prev=np.ravel(_c)[0]
+#  ct=1
+#  for i in np.ravel(_c)[1:]:
+#    if i == prev:
+#      ct+=1
+#    else:
+#      print(prev, ct)
+#      ct=1
+#    prev=i
+
 #%%
 def copy_python_to_amm(py_est, amm):
   py_vars = extract_py_vars(py_est)
   [c, d,v,eo,es, osum, oscale] = itemgetter('centroids', 'splitdims','splitvals', 'encode_offsets', 'encode_scales', 'out_offset_sum', 'out_scale')(py_vars)
 
   #amm.setCentroids(c) 
+  #The centroid shape doens't matter? task (64,64) vs. est (4,16,64) 
   amm.setCentroidsCopyData(c)
   
   amm.setSplitdims(d)
   
   amm.setSplitvals(v)
-  
-  amm.setEncode_scales(es)
+
+  amm.setEncode_scales(es) #Do these get changed in training?
   amm.setEncode_offsets(eo)
   
   amm.out_offset_sum = osum
@@ -352,9 +370,9 @@ num_dists=Y_hat.size
 print(f'time to run mithral with python bindings: {e-s:.7f}s',
       f'Throughput: {num_dists/(e-s):.2E}/sec',
       f'Python Throughtput {old_throughput:.2E}')
-print(f"{100*np.sum(unfitted_Y!=Y_hat)/Y_hat.size:.1f}% changed after encoding") 
-print(f'new time {e-s} vs old time {old_t}')
+print(f"{100*np.sum(unfitted_Y!=Y_hat)/Y_hat.size:.1f}% changed after encoding. Num Not 0: {np.sum(Y_hat!=0)}") 
 print("1-R^2: ",1-r2_score(Y, Y_hat))
+print(f'new time {e-s} vs old time {old_t}')
 
 #why true? np.all(task.output()[3104:,50:]==0)
 #assert(np.all(task.amm.codes == est.A_enc)) #false why?
@@ -363,10 +381,12 @@ print("1-R^2: ",1-r2_score(Y, Y_hat))
 #%%
 copy_python_to_amm(est, task.amm)
 for i in range(99):
-  task.amm.setCentroidsCopyData(est.enc.centroids)
-  #task.amm.setCentroids(est.enc.centroids)
+  c, *_ = itemgetter('centroids', 'splitdims','splitvals', 'encode_offsets', 'encode_scales', 'out_offset_sum', 'out_scale')(py_vars)
+  task.amm.setCentroidsCopyData(c)
+  #task.amm.setCentroids(c)
   task.run_matmul(True)
-  print(i)
+  print(i) 
+  #always stops at 54?
 #%%
 print({k: v.shape if isinstance(v, np.ndarray) else v 
        for k,v in extract_py_vars(est).items()})

@@ -60,7 +60,8 @@ struct mithral_amm_task { // Class which all data uses. Copy this one.
         centroids(ncentroids * ncodebooks, D),
         nsplits(ncodebooks * nsplits_per_codebook),
         splitdims(nsplits),
-        splitvals(1 << 4, nsplits),
+        //splitvals(1 << 4, nsplits),
+        splitvals(1 << 4, ncodebooks),
         encode_scales(nsplits),
         encode_offsets(nsplits),
         nnz_per_centroid(lut_work_const > 0 ?
