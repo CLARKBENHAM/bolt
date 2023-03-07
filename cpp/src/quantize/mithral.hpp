@@ -141,6 +141,11 @@ struct mithral_amm {
             encode_offsets, ncodebooks, tmp_codes.data());
         zip_bolt_colmajor(tmp_codes.data(), N, ncodebooks, codes.data());
     }
+    
+    void cast_zip_bolt_colmajor () {
+        //only if copied codes into c++ from python
+        zip_bolt_colmajor(tmp_codes.data(), N, ncodebooks, codes.data());
+    }
 
     void lut(const float* Q) {
         if (nnz_per_centroid > 0) { //always positive in mithral_amm_task constructor; profile_amm_old.hpp would change to negative for some tests
@@ -1265,6 +1270,7 @@ void mithral_scan(const uint8_t* codes, int64_t nblocks,
                     // note that we need to use inline asm to get the right
                     // instruction here on my machine for unclear reasons
                     if (gg % 128 == 127) {
+                        assert(gg < 128);//else avg_prev128 incorrect
                         auto new_avg_prev2 = avg_epu8(avg_prev1[mm], avgs);
                         auto new_avg_prev4 = avg_epu8(avg_prev2[mm], new_avg_prev2);
                         auto new_avg_prev8 = avg_epu8(avg_prev4[mm], new_avg_prev4);
@@ -1437,6 +1443,7 @@ void mithral_scan(const uint8_t* codes, int64_t nblocks, int ncodebooks,
         }
         auto codes_ptr = codes + (chunk * codes_chunk_stride);
         auto out_ptr = dists_out + (chunk * out_chunk_stride);
+        // -exec p/d *(uint8_t *)&luts[0]@128
         auto lut_ptr = luts + (chunk * lut_chunk_stride);
 
         // if (ncodebooks <= 4) {

@@ -84,11 +84,14 @@ PYBIND11_MODULE(mithral_wrapped, m) {
                         float lut_work_const){
            return mithral_amm_task<float>{N,D,M,ncodebooks, lut_work_const};
        }))
-       .def("output"                                                           , &mithral_amm_task<float>::output)
+       .def("encode"                                                           , &mithral_amm_task<float>::encode)
+       .def("lut"                                                              , &mithral_amm_task<float>::lut)
+       .def("scan"                                                             , &mithral_amm_task<float>::scan)
        .def("run_matmul"                                                       , &mithral_amm_task<float>::run_matmul)
        .def_readonly("amm"                                                     , &mithral_amm_task<float>::amm) // whole amm object
+       .def("output"                                                           , &mithral_amm_task<float>::output)
        .def_readwrite("X"                                                      , &mithral_amm_task<float>::X) //can return out matricies?
-       .def_readwrite("Q"                                                       , &mithral_amm_task<float>::Q)
+       .def_readwrite("Q"                                                      , &mithral_amm_task<float>::Q)
        // stuff we pass into the amm object (would be learned during training)
        .def_readwrite("N_padded"                                               , &mithral_amm_task<float>::N_padded)
        .def_readwrite("centroids"                                              , &mithral_amm_task<float>::centroids)
@@ -128,6 +131,7 @@ PYBIND11_MODULE(mithral_wrapped, m) {
                                      encode_scales, encode_offsets,
                                       idxs,  nnz_per_centroid};
         }))
+        .def("cast_zip_bolt_colmajor"       , &mithral_amm<float>::cast_zip_bolt_colmajor)
         // ctor params
         .def_readwrite("N"                  , &mithral_amm<float>::N)
         .def_readwrite("D"                  , &mithral_amm<float>::D)
@@ -210,12 +214,7 @@ PYBIND11_MODULE(mithral_wrapped, m) {
             //py::buffer_info buf3 = py::array_t<float>(buf1.size, const_cast<float*>(centroid_ptr)).request();
 
             /* If no pointer is passed, NumPy will allocate the buffer */
-            auto sz = sizeof(py::array_t<float>(buf1.size));
             auto sz2 = buf1.size*sizeof(float);
-            if(sz!=sz2) {
-                cout<< sz << ' ' << sz2 << endl;
-            }
-            //is size right?
             float * centroid_ptr = static_cast<float*>(aligned_alloc(32, sz2)); 
             assert(reinterpret_cast<uintptr_t>(centroid_ptr)%32 ==0);
             //float *  = (ptr);

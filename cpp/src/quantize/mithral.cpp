@@ -24,8 +24,8 @@ void mithral_encode(
 {
     static constexpr bool DeferPerm = true;
     static constexpr int block_nrows = 32;
-    static constexpr int nsplits_per_codebook = 4;
-    static constexpr int vals_per_split = 1 << nsplits_per_codebook; // 16
+    static constexpr int nsplits_per_codebook = 4; 
+    static constexpr int vals_per_split = 1 << nsplits_per_codebook; // 16, why not 8?
     const int64_t nblocks = ceil(nrows / (double)block_nrows);
     assert(nrows % block_nrows == 0); // TODO remove this constraint
 
@@ -54,9 +54,21 @@ void mithral_encode(
         for (int s = 0; s < nsplits_per_codebook; s++) {
             auto splitdim = splitdims[split_idx + s];
             x_ptrs[s] = X + (x_col_stride * splitdim);
-            auto splitvals_ptr = all_splitvals + (vals_per_split * split_idx);
+            auto splitvals_ptr = all_splitvals + (vals_per_split * c);//What I'd expect, unless there's a reason to read from different memory each time(?) 
+            //auto splitvals_ptr = all_splitvals + (vals_per_split * split_idx); //shift by 16*4 entries per ncodebook
+            //-exec p/d *(int8_t *)&current_vsplitval_luts[0]@64
             current_vsplitval_luts[s] = _mm256_broadcastsi128_si256(
-                load_si128i((const __m128i*)splitvals_ptr));
+                load_si128i((const __m128i*)splitvals_ptr)); //loads 16 8bits at once from memory, then broadcasts to 256 bits
+                //load_si128i loads 16 int8's at once, _mm256_broadcastsi128_si256 copies [128] to [128,128]
+                //you shift pointer over by 16*sizeof(int8 in bytes)=16 bytes=128bits for each codebook, to next splitvals
+                // Codes take values 0-15 for comparing values in splitvals_luts (max 0,3,7,15) which then become index of centroid
+                
+                
+                
+                //you shift over by 16*4*sizeof(int8 in bytes)=64 bytes for each codebook
+                //So after each codebook you load the same [64g, 64unused, 64g, 64unused] for each split, then shift the 64 for next codebook
+                // Codes take values 0-8 for selecting values in splitvals_luts each 8 bits, so 
+                // [0-8*8, 8*8-128 unused], [128-128+8*8, 128+8*8-256 unused] which lines up
             current_vscales[s] = _mm256_set1_ps(scales[split_idx + s]);
             current_voffsets[s] = _mm256_set1_ps(offsets[split_idx + s]);
         }
@@ -71,7 +83,7 @@ void mithral_encode(
                 // auto voffsets = _mm256_setzero_si256();
                 auto vsplitvals_lut = current_vsplitval_luts[s];
                 auto vsplitvals = _mm256_shuffle_epi8(
-                        vsplitvals_lut, codes); // codes = group_ids
+                        vsplitvals_lut, codes); // codes = group_ids, range 0-15 for selecting centroids and 0-7 for split vals. Each code entry represent 'node' of X row
 
                 auto x_ptr = x_ptrs[s];
                 x_ptrs[s] += block_nrows;
@@ -83,10 +95,15 @@ void mithral_encode(
                     x_ptr, vscales, voffsets);
 
                 auto masks = _mm256_cmpgt_epi8(x_i8, vsplitvals);
-                // map -1 -> 1; 0 stays the same
+                // map -1 -> 1; 0 stays the same. Why? _mm256_cmpgt_epi8 always returns positive values?
                 auto masks_0_or_1 = _mm256_sign_epi8(masks, masks);
+                //Below actually screws things up, why? 
+                //assert(_mm256_movemask_epi8(reinterpret_cast<__m256i>(_mm256_cmp_ps(reinterpret_cast<__m256>(masks), reinterpret_cast<__m256>(masks_0_or_1), _CMP_EQ_OQ)))== 0xffff);
 
-                if (s > 0) {
+                //is this correct? 0*2*2*2*2=0 each time, never go down 'left' branch of tree always compare against first
+                //But if you make your codes go 'down' then they won't select the correct centroid out of 16, it could only be out of 8?
+                // I'd expect you have codes for last splitvals range over [8-15], then multiply by 2 + 1 and subtract 16 to get centroid idx
+                if (s > 0) {//don't need if statement
                     // shift left by multiplying by 2, by adding to itself
                     codes = _mm256_add_epi8(codes, codes);
                 }

@@ -173,7 +173,7 @@ N,D,M = 4096, 64,128 #Python output size doesn't match input size
 ncodebooks=[2]
 task=mithral_wrapped.mithral_amm_task_float(N,D,M, ncodebooks[0], lutconsts[0])
 #easy debugging
-X= np.stack([np.array([i%16]*D) for i in range(N)])
+X= np.stack([np.array([i%16]*(D//2) + [(i%16)*(j%16) for j in range(D//2)]) for i in range(N)])
 Q= np.stack([np.array([i%16]*M) for i in range(D)])
 task.X=X
 task.Q=Q
@@ -273,7 +273,12 @@ def extract_py_vars(est):
   ## i idx is 2^{i-1} value can split nodes for all the ncodebook subspaces
   #C++ expected 0 padded values out to 16 per BST of split values
   #TODO Is this right row/column order?
-  splitvals=np.array([np.pad(l, (0,num_pad))
+  #in C++ uses (ncodebooks, 32) if row major accesses
+  # iterate over the 32 for a given codebook
+  # [v1,v2,v2,v3,v3,v3,v3,v4,v4,v4,v4,v4,v4,v4,v4]
+  # (nsplits, [1,2,4,8]) 
+  #but the last values get padded to 16
+  splitvals=np.array([[np.pad(l, (0,num_pad))]
             for l in raw_splitvals
             ]).astype(np.int8)
   return {
@@ -302,6 +307,7 @@ print({k: v.shape if isinstance(v, np.ndarray) else v
 
 py_vars = extract_py_vars(est)
 [c, d,v,eo,es, osum, oscale] = itemgetter('centroids', 'splitdims','splitvals', 'encode_offsets', 'encode_scales', 'out_offset_sum', 'out_scale')(py_vars)
+#print(d,eo,es, v, sep='\n')
 #copying keeps order for these, but are the luts and codes the same?
 #print(est.A_enc, est.luts)
 #print(list(map(lambda i: (np.min(i), np.max(i)), [est.A_enc, est.luts])))
@@ -343,13 +349,53 @@ def copy_python_to_amm(py_est, amm):
   #assert np.all(amm.getCentroids() == c) #shape wrong, return differently?
   assert np.all(np.ravel(amm.getCentroids()) == np.ravel(c)) 
   assert np.all(amm.getSplitdims() == d)
-  assert np.all(amm.getSplitvals() == v)
+  #assert np.all(amm.getSplitvals() == v)
   assert np.all(amm.getEncode_scales()==es)
   assert np.all(amm.getEncode_offsets() == eo)
    
   #segfaults when py_est is changed; but I should be able to delete?
   #del py_est 
+
+def hardcode_copy(py_test, amm):
+  #copy_python_to_amm(est, amm) #not used for scan
   
+  #Only for testing; in prod C++ must learn these vars itself
+  #If these are only 4 bit codes, then ith columns should substract to be in range[0-16] not [i*16,(i+1)*16]
+  h,w = est.A_enc.shape
+  copy =est.A_enc - np.array([[16*i for i in range(w)]]*h)
+  amm.tmp_codes=copy 
+  assert np.all(amm.tmp_codes==copy)
+  amm.cast_zip_bolt_colmajor() #format in C++
+  #ix = o!=0
+  #print('fraction unchanged: ', np.sum(amm.codes[ix] == o[ix])/o[ix].size) #didn't get changed?
+  #assert(np.sum(amm.codes[ix] == o[ix])/o[ix].size < 0.2)
+  
+  #print(np.ravel(est.A_enc, order='f')[:32]) #ColMatrix
+  #Codes are good: 
+  #-exec p/d *(uint8_t *)&codes_ptr[4064]@32
+  #$20 = {0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15}
+  #-exec p/d *(uint8_t *)&codes_ptr[2*4096-32]@32
+  #$21 = {16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31}
+  
+  amm.luts = est.luts.reshape(est.luts.shape[0],-1)
+  assert np.all(np.ravel(amm.luts)==np.ravel(est.luts))
+  #print(np.ravel(est.luts, order='c')[:32]) #RowMatrix
+  #Luts are good: -exec p/d *(uint8_t *)&luts[127*32]@32
+  #-exec p/d *(uint8_t *)&luts[127*32]@32
+  #$22 = {0, 1, 2, 3, 4, 5, 6, 7, 7, 8, 9, 10, 11, 12, 13, 14, 0, 10, 19, 29, 39, 48, 58, 68, 77, 87, 97, 106, 116, 126, 135, 145}
+
+#?!?
+old_codes = task.amm.codes
+hardcode_copy(est, task.amm)
+print("Still only half?!", np.sum(Y_hat[:,:64]==0)/Y_hat[:,:64].size==0, np.sum(Y_hat[:,-64:]==0)/Y_hat[:,-64:].size==1, np.mean(Y_hat==0))
+task.scan()
+Y_hat=task.output()
+print("1-R^2 HARDCODE COPY: ",1-r2_score(Y, Y_hat))
+print("1-R^2 HARDCODE COPY: ",1-r2_score(Y[:,:64], Y_hat[:,:64]))
+task.scan()
+#%% Trying hardcodes to fix
+
+
 print_amm_ptrs(task.amm)
 print("copying python")
 copy_python_to_amm(est, task.amm)
@@ -373,11 +419,10 @@ print(f'time to run mithral with python bindings: {e-s:.7f}s',
 print(f"{100*np.sum(unfitted_Y!=Y_hat)/Y_hat.size:.1f}% changed after encoding. Num Not 0: {np.sum(Y_hat!=0)}") 
 print("1-R^2: ",1-r2_score(Y, Y_hat))
 print(f'new time {e-s} vs old time {old_t}')
-
+Y=est(X,Q)
 #why true? np.all(task.output()[3104:,50:]==0)
 #assert(np.all(task.amm.codes == est.A_enc)) #false why?
 #assert(np.all(task.amm.luts.shape==est.luts.shape)) #wrong dims
-
 #%%
 copy_python_to_amm(est, task.amm)
 for i in range(99):
