@@ -13,7 +13,10 @@
 #include <cmath>
 #include <type_traits>
 #include <limits>
+#include <iostream>
 #include "immintrin.h"
+#include <vector>
+#include <algorithm>
 
 // #define MITHRAL_USE_BOLT_SAFE_SCAN // way slower, but exact sum of uint8s
 
@@ -35,6 +38,7 @@
 // Testing pybind
 int sub(int i, int j);
 int add(int i, int j);
+
 // ================================================================ in cpp
 // these should be the only functions you have to call
 
@@ -81,6 +85,11 @@ void mithral_lut_sparse(const float* Q, int nrows, int ncols, int ncodebooks,
 
 void mithral_scan(const uint8_t* codes, int64_t nblocks, int ncodebooks,
                   int noutputs, const uint8_t* luts, uint8_t* dists_out);
+
+//Only for testing codes and luts correct
+void mithral_scan_test(const uint8_t* codes, int n, int ncodebooks, int m,
+                float out_offset_sum, float out_scale,
+                const uint8_t* luts, float* dists_out);
 
 // ------------------------ wrapper
 
@@ -143,7 +152,7 @@ struct mithral_amm {
     }
     
     void cast_zip_bolt_colmajor () {
-        //only if copied codes into c++ from python
+        //only for if copied codes into c++ from python
         zip_bolt_colmajor(tmp_codes.data(), N, ncodebooks, codes.data());
     }
 
@@ -167,6 +176,12 @@ struct mithral_amm {
             mithral_scan(codes.data(), nblocks, ncodebooks, M,
                          luts.data(), (uint8_t*)out_mat.data());
         #endif
+    }
+    void scan_test() {
+        mithral_scan_test(codes.data(), N, ncodebooks,  M,
+                    out_offset_sum,out_scale,
+                     luts.data(), (float*)out_mat.data());
+        
     }
 
     //size params
@@ -1165,6 +1180,48 @@ void mithral_scan_notile(const uint8_t* codes, int64_t nblocks,
     }
 }
 
+
+
+/* Python function to match
+// Convert using Sum
+//How does original use int8 for dists_out?
+    ColMatrix<uint8_t> codes;
+    RowMatrix<uint8_t> luts;
+    ColMatrix<output_t> out_mat;
+*/
+
+void mithral_scan_test(const uint8_t* codes, int n, int ncodebooks, int m,
+                       float offset, float scale,
+                       const uint8_t* luts, float* float_dists_out) 
+{ 
+    // Allocate space for the output array.
+  std::vector<float> centroid_dists(n*ncodebooks);
+  
+  for (int i = 0; i < m; i++) {
+    const uint8_t* lut = luts + i * ncodebooks * 16;
+
+    // Compute the distances to the centroids in the current codebook.
+    std::transform(codes, codes + n*ncodebooks, centroid_dists.begin(),
+                   [lut](uint8_t x) { return lut[x]; });
+
+    
+    // // Sum over the upcast dimension.
+    // std::vector<float> dists_summed(m);
+    // for (int j = 0; j < m; j++) {
+    //   dists_summed[j] = std::accumulate(
+    //       dists_reshaped.cbegin() + j * upcast_every,
+    //       dists_reshaped.cbegin() + (j + 1) * upcast_every, 0.0f);
+    // }
+
+    // Clip the distances and sum over the output dimension.
+    // dists = centroid_dists.reshape(X_enc.shape)
+    // dists = np.clip(dists, 0, 255).sum(axis=-1)
+    for (int j = 0; j < n; j++) {
+      float dist = std::accumulate(centroid_dists.cbegin()+m*ncodebooks, centroid_dists.cbegin()+ (m+1)*ncodebooks, 0.0f);
+      float_dists_out[j * m + i] = ((dist / scale) + offset);
+    }
+  }
+}
 template<int NBytes, int UpcastEvery=16, int _OutTileSz=1,
          bool Force16BitOutput=false>
 void mithral_scan(const uint8_t* codes, int64_t nblocks,

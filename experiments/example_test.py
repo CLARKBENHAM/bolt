@@ -312,20 +312,57 @@ py_vars = extract_py_vars(est)
 #print(est.A_enc, est.luts)
 #print(list(map(lambda i: (np.min(i), np.max(i)), [est.A_enc, est.luts])))
 #codes are >255 but c++ is uint8 type?
+#%%
+#compare dists function to make sure copied to c++ correctly
 
-##getCentroids matches with set centroids, but the R^2 is still wrong
-#for _c in [c, task.amm.getCentroids()]:
-#  print(_c)
-#  prev=np.ravel(_c)[0]
-#  ct=1
-#  for i in np.ravel(_c)[1:]:
-#    if i == prev:
-#      ct+=1
-#    else:
-#      print(prev, ct)
-#      ct=1
-#    prev=i
+def dists_enc(self, X_enc, Q_luts, unquantize=True,
+              offset=None, scale=None):
+    X_enc = np.ascontiguousarray(X_enc)
+    
+    if unquantize:
+        offset = self.total_lut_offset if offset is None else offset
+        scale = self.scale_by if scale is None else scale
 
+    all_dists = np.empty((len(Q_luts), len(X_enc)), dtype=np.float32)
+    for i, lut in enumerate(Q_luts):
+        centroid_dists = lut.ravel()[X_enc.ravel()]
+        dists = centroid_dists.reshape(X_enc.shape)
+        dists = dists.reshape(dists.shape[0], -1, self.upcast_every)
+        dists = dists.sum(2)
+        dists = np.clip(dists, 0, 255).sum(axis=-1)
+        if self.quantize_lut and unquantize:
+            dists = (dists / scale) + offset
+        all_dists[i] = dists
+    return all_dists.T
+  
+def dists_enc_short(X_enc, Q_luts, 
+            offset=0, scale=1,upcast_every=2):
+  X_enc = np.ascontiguousarray(X_enc)
+  
+  all_dists = np.empty((len(Q_luts), len(X_enc)), dtype=np.float32)
+  for i, lut in enumerate(Q_luts):
+      centroid_dists = lut.ravel()[X_enc.ravel()]
+      dists = centroid_dists.reshape(X_enc.shape)
+      # #upcast can be less than ncodebooks; in c++ you can't do the mutli-stage averaging more than 256 times, so if you had 1024 codebooks you'd seperate the averaging into 4 256 chunks and then average the final 4
+      # #below is to have python mimic this upcast behaviour
+      #dists = dists.reshape(dists.shape[0], -1, upcast_every)
+      #dists = dists.sum(2)
+      dists = np.clip(dists, 0, 255).sum(axis=-1)
+      dists = (dists / scale) + offset
+      all_dists[i] = dists
+  return all_dists.T
+
+Y_hat=dists_enc(est.enc, est.A_enc, est.luts, offset=est.offset, scale=est.scale)
+print("python hardcode using sum", 1-r2_score(Y, Y_hat))
+#>>python hardcode using sum 7.626492367063253e-05
+Y_hat=dists_enc_short(est.A_enc, est.luts, offset=est.offset, scale=est.scale)
+print("python hardcode using sum", 1-r2_score(Y, Y_hat))
+
+task.amm.codes=est.A_enc
+task.amm.luts = est.luts.reshape(est.luts.shape[0],-1)
+task.scan_test()
+Y_hat=task.amm.flot_out_matj()
+print("c++ copied to hardcode using sum", 1-r2_score(Y, Y_hat))
 #%%
 def copy_python_to_amm(py_est, amm):
   py_vars = extract_py_vars(py_est)
@@ -362,7 +399,7 @@ def hardcode_copy(py_test, amm):
   #Only for testing; in prod C++ must learn these vars itself
   #If these are only 4 bit codes, then ith columns should substract to be in range[0-16] not [i*16,(i+1)*16]
   h,w = est.A_enc.shape
-  copy =est.A_enc - np.array([[16*i for i in range(w)]]*h)
+  copy =est.A_enc #- np.array([[16*i for i in range(w)]]*h)
   amm.tmp_codes=copy 
   assert np.all(amm.tmp_codes==copy)
   amm.cast_zip_bolt_colmajor() #format in C++
@@ -387,12 +424,15 @@ def hardcode_copy(py_test, amm):
 #?!?
 old_codes = task.amm.codes
 hardcode_copy(est, task.amm)
-print("Still only half?!", np.sum(Y_hat[:,:64]==0)/Y_hat[:,:64].size==0, np.sum(Y_hat[:,-64:]==0)/Y_hat[:,-64:].size==1, np.mean(Y_hat==0))
-task.scan()
+#task.scan()
+task.scan_test()
 Y_hat=task.output()
+print("Still only half?!", np.sum(Y_hat[:,:64]==0)/Y_hat[:,:64].size==0, np.sum(Y_hat[:,-64:]==0)/Y_hat[:,-64:].size==1, np.mean(Y_hat==0))
 print("1-R^2 HARDCODE COPY: ",1-r2_score(Y, Y_hat))
-print("1-R^2 HARDCODE COPY: ",1-r2_score(Y[:,:64], Y_hat[:,:64]))
+print("1-R^2 First half HARDCODE COPY: ",1-r2_score(Y[:,:64], Y_hat[:,:64]))
 task.scan()
+
+
 #%% Trying hardcodes to fix
 
 
@@ -419,7 +459,7 @@ print(f'time to run mithral with python bindings: {e-s:.7f}s',
 print(f"{100*np.sum(unfitted_Y!=Y_hat)/Y_hat.size:.1f}% changed after encoding. Num Not 0: {np.sum(Y_hat!=0)}") 
 print("1-R^2: ",1-r2_score(Y, Y_hat))
 print(f'new time {e-s} vs old time {old_t}')
-Y=est(X,Q)
+Y_hat=est(X,Q)
 #why true? np.all(task.output()[3104:,50:]==0)
 #assert(np.all(task.amm.codes == est.A_enc)) #false why?
 #assert(np.all(task.amm.luts.shape==est.luts.shape)) #wrong dims
@@ -432,6 +472,7 @@ for i in range(99):
   task.run_matmul(True)
   print(i) 
   #always stops at 54?
+
 #%%
 print({k: v.shape if isinstance(v, np.ndarray) else v 
        for k,v in extract_py_vars(est).items()})
@@ -504,7 +545,7 @@ task.amm.luts=est.luts
 Q2=Q+np.random.rand(*Q.shape)*np.mean(Q)/10
 #%% Scrap
 
-mithral_wrapped.mithral_amm_float(N,D,M, ncodebooks,centroids, splitdims, splitvals, encode_scales, encode_offsets, idxs, nnz_per_centroid)
+#mithral_wrapped.mithral_amm_float(N,D,M, ncodebooks,centroids, splitdims, splitvals, encode_scales, encode_offsets, idxs, nnz_per_centroid)
 
 #Do you need the constructor params or just the intermedia values?
 
@@ -539,4 +580,4 @@ mithral_wrapped.mithral_amm_float(N,D,M, ncodebooks,centroids, splitdims, splitv
 #  #amm.setIdxsCopyData(.astype(int))
 #  
 #  #segfaults when py_est is changed; but I should be able to delete?
-#  #del py_est 
+#  #del py_est ``

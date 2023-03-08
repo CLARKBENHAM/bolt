@@ -132,6 +132,7 @@ PYBIND11_MODULE(mithral_wrapped, m) {
                                       idxs,  nnz_per_centroid};
         }))
         .def("cast_zip_bolt_colmajor"       , &mithral_amm<float>::cast_zip_bolt_colmajor)
+        .def("scan_test"       , &mithral_amm<float>::scan_test)
         // ctor params
         .def_readwrite("N"                  , &mithral_amm<float>::N)
         .def_readwrite("D"                  , &mithral_amm<float>::D)
@@ -319,7 +320,6 @@ PYBIND11_MODULE(mithral_wrapped, m) {
         .def_readwrite("out_offset_sum"      , &mithral_amm<float>::out_offset_sum)
         .def_readwrite("out_scale"           , &mithral_amm<float>::out_scale)
         .def_readonly("out_mat"             , &mithral_amm<float>::out_mat) //eigen object
-           
         ;
 
     ////Eigen type so can return real matrix
