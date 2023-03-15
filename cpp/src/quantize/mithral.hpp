@@ -89,7 +89,7 @@ void mithral_scan(const uint8_t* codes, int64_t nblocks, int ncodebooks,
 //Only for testing codes and luts correct
 void mithral_scan_test(const uint8_t* codes, int n, int ncodebooks, int m,
                        float offset, float scale,
-                       const uint8_t* luts, float* float_dists_out);
+                       const uint8_t* luts, uint16_t* float_dists_out);
 
 // ------------------------ wrapper
 
@@ -180,7 +180,7 @@ struct mithral_amm {
     void scan_test() {
         mithral_scan_test((const uint8_t*)codes.data(), N, ncodebooks,  M,
                     out_offset_sum, out_scale,
-                    (const uint8_t*)luts.data(), (float*)out_mat.data());
+                    (const uint8_t*)luts.data(), (output_t*)out_mat.data());
         
     }
 

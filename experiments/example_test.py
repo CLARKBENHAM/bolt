@@ -444,15 +444,12 @@ task.amm.luts = est.luts.reshape(est.luts.shape[0],-1)
 task.amm.scan_test()
 Y_hat=task.amm.out_mat
 print("c++ copied to hardcode using sum", 1-r2_score(Y, Y_hat))
-Y_hat=task.amm.getOutput()
-print("c++ copied to hardcode using sum", 1-r2_score(Y, Y_hat))
 print()
 n,m=4096,128
 plt.hist(Y.flatten(),bins=30,label='Y')
 plt.hist(Y_hat.flatten(),bins=30,label='Y_hat')
 plt.legend()
 plt.show()
-Y_hat
 #%%
 def hardcode_copy(py_test, amm):
   #copy_python_to_amm(est, amm) #not used for scan
@@ -482,11 +479,10 @@ def hardcode_copy(py_test, amm):
   #-exec p/d *(uint8_t *)&luts[127*32]@32
   #$22 = {0, 1, 2, 3, 4, 5, 6, 7, 7, 8, 9, 10, 11, 12, 13, 14, 0, 10, 19, 29, 39, 48, 58, 68, 77, 87, 97, 106, 116, 126, 135, 145}
 
-#?!?
 old_codes = task.amm.codes
 hardcode_copy(est, task.amm)
 #task.scan()
-task.scan_test()
+task.amm.scan_test()
 Y_hat=task.output()
 print("Still only half?!", np.sum(Y_hat[:,:64]==0)/Y_hat[:,:64].size==0, np.sum(Y_hat[:,-64:]==0)/Y_hat[:,-64:].size==1, np.mean(Y_hat==0))
 print("1-R^2 HARDCODE COPY: ",1-r2_score(Y, Y_hat))

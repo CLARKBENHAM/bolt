@@ -193,12 +193,13 @@ PYBIND11_MODULE(mithral_wrapped, m) {
             Eigen::Map<Eigen::Matrix<int, -1, -1, Eigen::RowMajor>> mf(const_cast<int*>(self.idxs),rows,cols);
             return mf; 
         })
-        .def("getOutput", [](mithral_amm<float> &self) {
-            const int rows=self.N;
-            const int cols=self.M;
-            Eigen::Map<Eigen::Matrix<output_t, -1, -1, Eigen::RowMajor>> mf(const_cast<output_t*>(self.out_mat.data()),rows,cols);
-            return mf; 
-        })
+        //This would convert c++ from being column to row, and be different from task.amm.out_mat
+        //.def("getOutput", [](mithral_amm<float> &self) {
+        //    const int rows=self.N;
+        //    const int cols=self.M;
+        //    Eigen::Map<Eigen::Matrix<output_t, -1, -1, Eigen::RowMajor>> mf(const_cast<output_t*>(self.out_mat.data()),rows,cols);
+        //    return mf; 
+        //})
     
         //setters, Can change pointer to new value; can't overwrite existing. Fine to Copy by value here, only used initally
         // passing references causes segfault when change data on python side. Passing raw errors initally

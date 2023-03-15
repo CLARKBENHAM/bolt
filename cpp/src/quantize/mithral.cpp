@@ -24,7 +24,7 @@ int add(int i, int j) {
 
 void mithral_scan_test(const uint8_t* codes, int n, int ncodebooks, int m,
                        float offset, float scale,
-                       const uint8_t* luts, float* float_dists_out) 
+                       const uint8_t* luts, uint16_t* float_dists_out) 
 { 
   for (int i = 0; i < m; i++) {
     const uint8_t* lut = luts + i * ncodebooks * 16;
@@ -35,8 +35,8 @@ void mithral_scan_test(const uint8_t* codes, int n, int ncodebooks, int m,
         dist += lut[codes[j + code_ix*n]];
       }
       //How Py does it in a row matrix
-      //float_dists_out[i + j * m] = ((dist / scale) + offset);
-      //but c is col matrix (?)
+      ///float_dists_out[i + j * m] = ((dist / scale) + offset);
+      //but c is col matrix 
       float_dists_out[i*n + j] = ((dist / scale) + offset);
     }
   }
