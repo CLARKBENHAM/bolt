@@ -14,6 +14,34 @@ int sub(int i, int j) {
 int add(int i, int j) {
     return i + j; // + pow(10,8);
 }
+/* Python function to match
+// Convert using Sum
+//How does original use int8 for dists_out?
+    ColMatrix<uint8_t> codes;
+    RowMatrix<uint8_t> luts;
+    ColMatrix<output_t> out_mat;
+*/
+
+void mithral_scan_test(const uint8_t* codes, int n, int ncodebooks, int m,
+                       float offset, float scale,
+                       const uint8_t* luts, float* float_dists_out) 
+{ 
+  for (int i = 0; i < m; i++) {
+    const uint8_t* lut = luts + i * ncodebooks * 16;
+    for (int j = 0; j < n; j++) {
+      float dist = 0;
+      //codes is col matrix
+      for (int code_ix = 0; code_ix < ncodebooks; code_ix ++) {
+        dist += lut[codes[j + code_ix*n]];
+      }
+      //How Py does it in a row matrix
+      //float_dists_out[i + j * m] = ((dist / scale) + offset);
+      //but c is col matrix (?)
+      float_dists_out[i*n + j] = ((dist / scale) + offset);
+    }
+  }
+}
+
 // ================================================================ encode
 
 void mithral_encode(

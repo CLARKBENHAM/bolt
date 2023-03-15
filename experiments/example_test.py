@@ -14,6 +14,7 @@ from timeit import default_timer as timer
 import numpy as np
 from sklearn.metrics import r2_score
 from operator import itemgetter
+import matplotlib.pyplot as plt
 
 from python import vq_amm
 try:
@@ -125,15 +126,15 @@ name = "Caltech3x3" #'cifar100'
 #N,D,M = (224 - 3 + 1) * (224 - 3 + 1), 3 * (3 * 3), 2 
 N,D,M= 49312,27,2 #dimensions of X and Q above produces. These stay
 kCaltechTaskShape0=mithral_wrapped.MatmulTaskShape(N,D,M, name)
-ncodebooks= [32] #[2, 4, 8, 16, 32, 64]
-lutconsts= [-1] #[-1, 1, 2, 4]
+ncodebooks= 32 #[2, 4, 8, 16, 32, 64]
+lutconsts= -1 #[-1, 1, 2, 4]
 N,D,M=10000, 512, 100
 kCifar100TaskShape=mithral_wrapped.MatmulTaskShape(N,D,M, "Cifar100")
 print("warn: using Cifar100")
 
 #% Get raw C++ speeds
-float32_profile = lambda : mithral_wrapped._profile_mithral(kCaltechTaskShape0, ncodebooks, lutconsts)
-int8_profile = lambda :mithral_wrapped._profile_mithral_int8(kCaltechTaskShape0, ncodebooks, lutconsts)
+float32_profile = lambda : mithral_wrapped._profile_mithral(kCaltechTaskShape0, [ncodebooks], [lutconsts])
+int8_profile = lambda :mithral_wrapped._profile_mithral_int8(kCaltechTaskShape0, [ncodebooks], [lutconsts])
 ##NOTE: The stdout redirects don't work in repl
 #float32_data = run_cpp_timing(float32_profile)
 #int8_data = run_cpp_timing(int8_profile)
@@ -170,8 +171,8 @@ new_time = max(map(lambda r: min(r.trial_best_sec_times), int8_data)) #type of o
 
 #% Speed of Python C++ Bindings
 N,D,M = 4096, 64,128 #Python output size doesn't match input size
-ncodebooks=[2]
-task=mithral_wrapped.mithral_amm_task_float(N,D,M, ncodebooks[0], lutconsts[0])
+ncodebooks=2
+task=mithral_wrapped.mithral_amm_task_float(N,D,M, ncodebooks, lutconsts)
 #easy debugging
 X= np.stack([np.array([i%16]*(D//2) + [(i%16)*(j%16) for j in range(D//2)]) for i in range(N)])
 Q= np.stack([np.array([i%16]*M) for i in range(D)])
@@ -207,8 +208,8 @@ old_throughput=(num_dists)/old_t
 
 
 #% Copy Python Learned values to C++
-#hparams_dict = {'ncodebooks': 4*ncodebooks[0], 'lut_work_const': lutconsts[0]} #increase codebooks with more outputs?
-hparams_dict = {'ncodebooks': ncodebooks[0], 'lut_work_const': lutconsts[0]}
+#hparams_dict = {'ncodebooks': 4*ncodebooks, 'lut_work_const': lutconsts} #increase codebooks with more outputs?
+hparams_dict = {'ncodebooks': ncodebooks, 'lut_work_const': lutconsts}
 est = vq_amm.MithralMatmul(**hparams_dict)
 #Num centroids is fixed at 16; so can always fit in L1?    
 est.fit(X,Q)
@@ -312,6 +313,36 @@ py_vars = extract_py_vars(est)
 #print(est.A_enc, est.luts)
 #print(list(map(lambda i: (np.min(i), np.max(i)), [est.A_enc, est.luts])))
 #codes are >255 but c++ is uint8 type?
+
+def copy_python_to_amm(py_est, amm):
+  py_vars = extract_py_vars(py_est)
+  [c, d,v,eo,es, osum, oscale] = itemgetter('centroids', 'splitdims','splitvals', 'encode_offsets', 'encode_scales', 'out_offset_sum', 'out_scale')(py_vars)
+
+  #amm.setCentroids(c) 
+  #The centroid shape doens't matter? task (64,64) vs. est (4,16,64) 
+  amm.setCentroidsCopyData(c)
+  
+  amm.setSplitdims(d)
+  
+  amm.setSplitvals(v)
+
+  amm.setEncode_scales(es) #Do these get changed in training?
+  amm.setEncode_offsets(eo)
+  
+  amm.out_offset_sum = osum
+  amm.out_scale  = oscale
+  #amm.setIdxs(.astype(int))
+  
+  #assert np.all(amm.getCentroids() == c) #shape wrong, return differently?
+  assert np.all(np.ravel(amm.getCentroids()) == np.ravel(c)) 
+  assert np.all(amm.getSplitdims() == d)
+  #assert np.all(amm.getSplitvals() == v)
+  assert np.all(amm.getEncode_scales()==es)
+  assert np.all(amm.getEncode_offsets() == eo)
+   
+  #segfaults when py_est is changed; but I should be able to delete?
+  #del py_est 
+
 #%%
 #compare dists function to make sure copied to c++ correctly
 
@@ -343,56 +374,86 @@ def dists_enc_short(X_enc, Q_luts,
   for i, lut in enumerate(Q_luts):
       centroid_dists = lut.ravel()[X_enc.ravel()]
       dists = centroid_dists.reshape(X_enc.shape)
+      #print(i, dists)
       # #upcast can be less than ncodebooks; in c++ you can't do the mutli-stage averaging more than 256 times, so if you had 1024 codebooks you'd seperate the averaging into 4 256 chunks and then average the final 4
       # #below is to have python mimic this upcast behaviour
       #dists = dists.reshape(dists.shape[0], -1, upcast_every)
       #dists = dists.sum(2)
+      
       dists = np.clip(dists, 0, 255).sum(axis=-1)
       dists = (dists / scale) + offset
+      
       all_dists[i] = dists
+      if False: #slow
+          assert(np.array_equal(dists,
+                            [sum((centroid_dists[j*ncodebooks+c_ix] 
+                          for c_ix in range(ncodebooks))
+                          )/scale + offset for j in range(len(X_enc))]))
   return all_dists.T
 
-Y_hat=dists_enc(est.enc, est.A_enc, est.luts, offset=est.offset, scale=est.scale)
-print("python hardcode using sum", 1-r2_score(Y, Y_hat))
-#>>python hardcode using sum 7.626492367063253e-05
-Y_hat=dists_enc_short(est.A_enc, est.luts, offset=est.offset, scale=est.scale)
-print("python hardcode using sum", 1-r2_score(Y, Y_hat))
+def dists_enc_cpp(X_enc, Q_luts, 
+            offset, scale, ncodebooks=2):
+  Q_luts=Q_luts.reshape(Q_luts.shape[0],-1)
+  n,_ = X_enc.shape
+  m,_=Q_luts.shape
+  dists_out=np.zeros(n*m)
+  luts=np.ravel(Q_luts, order='c')
+  codes=np.ravel(X_enc, order='f')
+  print(luts[128:140]  , luts[500:512]  , luts[4090:])
+  print(codes[128:140] , codes[500:512] , codes[4090:])
+  for i in range(m):
+    lut = luts[i * ncodebooks*16: (i+1)*ncodebooks*16]
+    for j in range(n):
+      dist = 0
+      for code_ix in range(ncodebooks):
+        dist += lut[codes[j + code_ix*n]]
+      dists_out[i+j*m] = ((dist / scale) + offset)
+  out = dists_out.reshape(n,m)
+  #assert(np.array_equal(np.ravel(out, order='f'), dists_out))	
+  return out
 
+def dists_enc_cpp_easy(X_enc, Q_luts, 
+            offset, scale, ncodebooks=2):
+  #Q_luts=Q_luts.reshape(Q_luts.shape[0],-1)
+  n,_ = X_enc.shape
+  m,_= 128,0 #Q_luts.shape
+  dists_out=np.zeros(n*m)
+  luts=np.ravel(Q_luts, order='c')
+  codes=np.ravel(X_enc, order='c')
+  for i in range(m):
+    lut = luts[i * ncodebooks*16: (i+1)*ncodebooks*16]
+    for j in range(n):
+      dist = 0
+      for code_ix in range(ncodebooks):
+        dist += lut[codes[j*ncodebooks + code_ix]]
+      dists_out[i + j*m] = ((dist / scale) + offset)
+  return dists_out.reshape(n,m)
+  
+#Y_hat=dists_enc(est.enc, est.A_enc, est.luts, offset=est.offset, scale=est.scale)
+#print("python hardcode using sum", 1-r2_score(Y, Y_hat))
+#>>python hardcode using sum 7.626492367063253e-05
+#Y_hat=dists_enc_short(est.A_enc, est.luts, offset=est.offset, scale=est.scale)
+#print("python hardcode using sum", 1-r2_score(Y, Y_hat))
+Y_hat=dists_enc_cpp(est.A_enc, est.luts, offset=est.offset, scale=est.scale)
+print("cpp mimic", 1-r2_score(Y, Y_hat))
+print()
+#%%
+copy_python_to_amm(est, task.amm)
 task.amm.codes=est.A_enc
 task.amm.luts = est.luts.reshape(est.luts.shape[0],-1)
-task.scan_test()
-Y_hat=task.amm.flot_out_matj()
+task.amm.scan_test()
+Y_hat=task.amm.out_mat
 print("c++ copied to hardcode using sum", 1-r2_score(Y, Y_hat))
+Y_hat=task.amm.getOutput()
+print("c++ copied to hardcode using sum", 1-r2_score(Y, Y_hat))
+print()
+n,m=4096,128
+plt.hist(Y.flatten(),bins=30,label='Y')
+plt.hist(Y_hat.flatten(),bins=30,label='Y_hat')
+plt.legend()
+plt.show()
+Y_hat
 #%%
-def copy_python_to_amm(py_est, amm):
-  py_vars = extract_py_vars(py_est)
-  [c, d,v,eo,es, osum, oscale] = itemgetter('centroids', 'splitdims','splitvals', 'encode_offsets', 'encode_scales', 'out_offset_sum', 'out_scale')(py_vars)
-
-  #amm.setCentroids(c) 
-  #The centroid shape doens't matter? task (64,64) vs. est (4,16,64) 
-  amm.setCentroidsCopyData(c)
-  
-  amm.setSplitdims(d)
-  
-  amm.setSplitvals(v)
-
-  amm.setEncode_scales(es) #Do these get changed in training?
-  amm.setEncode_offsets(eo)
-  
-  amm.out_offset_sum = osum
-  amm.out_scale  = oscale
-  #amm.setIdxs(.astype(int))
-  
-  #assert np.all(amm.getCentroids() == c) #shape wrong, return differently?
-  assert np.all(np.ravel(amm.getCentroids()) == np.ravel(c)) 
-  assert np.all(amm.getSplitdims() == d)
-  #assert np.all(amm.getSplitvals() == v)
-  assert np.all(amm.getEncode_scales()==es)
-  assert np.all(amm.getEncode_offsets() == eo)
-   
-  #segfaults when py_est is changed; but I should be able to delete?
-  #del py_est 
-
 def hardcode_copy(py_test, amm):
   #copy_python_to_amm(est, amm) #not used for scan
   

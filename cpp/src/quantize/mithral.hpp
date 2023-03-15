@@ -88,8 +88,8 @@ void mithral_scan(const uint8_t* codes, int64_t nblocks, int ncodebooks,
 
 //Only for testing codes and luts correct
 void mithral_scan_test(const uint8_t* codes, int n, int ncodebooks, int m,
-                float out_offset_sum, float out_scale,
-                const uint8_t* luts, float* dists_out);
+                       float offset, float scale,
+                       const uint8_t* luts, float* float_dists_out);
 
 // ------------------------ wrapper
 
@@ -178,9 +178,9 @@ struct mithral_amm {
         #endif
     }
     void scan_test() {
-        mithral_scan_test(codes.data(), N, ncodebooks,  M,
-                    out_offset_sum,out_scale,
-                     luts.data(), (float*)out_mat.data());
+        mithral_scan_test((const uint8_t*)codes.data(), N, ncodebooks,  M,
+                    out_offset_sum, out_scale,
+                    (const uint8_t*)luts.data(), (float*)out_mat.data());
         
     }
 
@@ -1180,48 +1180,6 @@ void mithral_scan_notile(const uint8_t* codes, int64_t nblocks,
     }
 }
 
-
-
-/* Python function to match
-// Convert using Sum
-//How does original use int8 for dists_out?
-    ColMatrix<uint8_t> codes;
-    RowMatrix<uint8_t> luts;
-    ColMatrix<output_t> out_mat;
-*/
-
-void mithral_scan_test(const uint8_t* codes, int n, int ncodebooks, int m,
-                       float offset, float scale,
-                       const uint8_t* luts, float* float_dists_out) 
-{ 
-    // Allocate space for the output array.
-  std::vector<float> centroid_dists(n*ncodebooks);
-  
-  for (int i = 0; i < m; i++) {
-    const uint8_t* lut = luts + i * ncodebooks * 16;
-
-    // Compute the distances to the centroids in the current codebook.
-    std::transform(codes, codes + n*ncodebooks, centroid_dists.begin(),
-                   [lut](uint8_t x) { return lut[x]; });
-
-    
-    // // Sum over the upcast dimension.
-    // std::vector<float> dists_summed(m);
-    // for (int j = 0; j < m; j++) {
-    //   dists_summed[j] = std::accumulate(
-    //       dists_reshaped.cbegin() + j * upcast_every,
-    //       dists_reshaped.cbegin() + (j + 1) * upcast_every, 0.0f);
-    // }
-
-    // Clip the distances and sum over the output dimension.
-    // dists = centroid_dists.reshape(X_enc.shape)
-    // dists = np.clip(dists, 0, 255).sum(axis=-1)
-    for (int j = 0; j < n; j++) {
-      float dist = std::accumulate(centroid_dists.cbegin()+m*ncodebooks, centroid_dists.cbegin()+ (m+1)*ncodebooks, 0.0f);
-      float_dists_out[j * m + i] = ((dist / scale) + offset);
-    }
-  }
-}
 template<int NBytes, int UpcastEvery=16, int _OutTileSz=1,
          bool Force16BitOutput=false>
 void mithral_scan(const uint8_t* codes, int64_t nblocks,

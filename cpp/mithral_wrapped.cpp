@@ -178,19 +178,25 @@ PYBIND11_MODULE(mithral_wrapped, m) {
         .def("getEncode_scales", [](mithral_amm<float> &self) {
             const int rows=self.ncodebooks;
             const int cols=4;
-            Eigen::Map<Eigen::Matrix<float, -1, -1, Eigen::RowMajor>> mf(const_cast<scale_t*>(self.encode_scales),rows,cols);
+            Eigen::Map<Eigen::Matrix<scale_t, -1, -1, Eigen::RowMajor>> mf(const_cast<scale_t*>(self.encode_scales),rows,cols);
             return mf; 
         })
         .def("getEncode_offsets", [](mithral_amm<float> &self) {
             const int rows=self.ncodebooks;
             const int cols=4;
-            Eigen::Map<Eigen::Matrix<float, -1, -1, Eigen::RowMajor>> mf(const_cast<offset_t*>(self.encode_offsets),rows,cols);
+            Eigen::Map<Eigen::Matrix<offset_t, -1, -1, Eigen::RowMajor>> mf(const_cast<offset_t*>(self.encode_offsets),rows,cols);
             return mf; 
         })
         .def("getIdxs", [](mithral_amm<float> &self) {
             const int rows=self.nnz_per_centroid;
             const int cols=self.ncodebooks;
             Eigen::Map<Eigen::Matrix<int, -1, -1, Eigen::RowMajor>> mf(const_cast<int*>(self.idxs),rows,cols);
+            return mf; 
+        })
+        .def("getOutput", [](mithral_amm<float> &self) {
+            const int rows=self.N;
+            const int cols=self.M;
+            Eigen::Map<Eigen::Matrix<output_t, -1, -1, Eigen::RowMajor>> mf(const_cast<output_t*>(self.out_mat.data()),rows,cols);
             return mf; 
         })
     
