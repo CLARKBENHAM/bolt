@@ -47,19 +47,39 @@
     },
     { 
       "name": "Mithral Debug Attach gdb to py proc",
-      //"type": "lldb",
 			"type": "cppdbg",
       "request": "attach",
       "program": "/root/local/miniconda/bin/python", 
       "processId": "${command:pickProcess}",
       "MIMode": "gdb",
-      //"miDebuggerPath": "/usr/bin/gdb",
+			//"miDebuggerArgs": ["-x", "${workspaceFolder}/.gdbinit"], //invalid key; but type is cppdbg?
 			"setupCommands": [
         {
           "description": "Enable pretty-printing for gdb",
           "text": "-enable-pretty-printing",
           "ignoreFailures": true
-        }
+        },
+				// Below was copied from Bing
+				{
+					"text": "set print pretty on",
+					"description": "Enable pretty printing for gdb"
+			},
+			{
+					"text": "set print elements 0",
+					"description": "Print all elements of arrays"
+			},
+			//{ //Putting arrays on their own line means the 'watch' only shows the first line aka 1 element
+			//		"text": "set print array on",
+			//		"description": "Print arrays"
+			//},
+			{
+					"text": "set print object on",
+					"description": "Print objects"
+			},
+			{
+					"text": "set print static-members on",
+					"description": "Print static members"
+			},
       ],
 			"sourceFileMap": {
         "/proc/self/cwd": "/home/cbenham/bolt/cpp", //have to use absolute path
