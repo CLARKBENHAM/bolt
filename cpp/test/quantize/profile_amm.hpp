@@ -103,6 +103,8 @@ struct mithral_amm_task { // Class which all data uses. Copy this one.
     }
 
     void encode() { amm.encode(X.data()); }
+    void mithral_encode_only() { amm.mithral_encode_only(X.data()); }
+
     void lut() { amm.lut(Q.data()); }
     void scan() { amm.scan(); }
 

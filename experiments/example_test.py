@@ -171,15 +171,19 @@ new_time = max(map(lambda r: min(r.trial_best_sec_times), int8_data)) #type of o
 
 #% Speed of Python C++ Bindings
 N,D,M = 4096, 64,128 #Python output size doesn't match input size
+n,m=N,M
 ncodebooks=2
 task=mithral_wrapped.mithral_amm_task_float(N,D,M, ncodebooks, lutconsts)
 #easy debugging
-X= np.stack([np.array([i%16]*(D//2) + [(i%16)*(j%16) for j in range(D//2)]) for i in range(N)])
-Q= np.stack([np.array([i%16]*M) for i in range(D)])
+X= np.stack([np.array([i%16]*(D//2) + [(i%16) for j in range(D//2)]) for i in range(N)])
+Q= np.stack([np.array([i%16]*(M//2) + [16 + i%16]*(M//2)) for i in range(D)])
+X= np.stack([np.array([i%16]*(D)) for i in range(N)])
+Q= np.stack([np.array([(i%16)/10]*(M//2) + [(i%16)]*(M//2)) for i in range(D)])
 task.X=X
 task.Q=Q
 #X = task.X
 #Q = task.Q
+
 Y_hat1=np.array(task.output().data)
 s=timer()
 task.run_matmul(True)
@@ -205,7 +209,6 @@ old_throughput=(num_dists)/old_t
 #print("old vs Mithral cpp 1-R^2: ",1-r2_score(Y, Y_hat))
 #print(np.mean(Y), np.mean(Y_hat))
 #print(X.shape, Q.shape)
-
 
 #% Copy Python Learned values to C++
 #hparams_dict = {'ncodebooks': 4*ncodebooks, 'lut_work_const': lutconsts} #increase codebooks with more outputs?
@@ -236,6 +239,7 @@ est_attr=['A_enc',
 #  print(t, est.__getattribute__(t))
 
 print(f"current pid:    {os.getpid()}\n")
+print()
 #%% utils
 def print_amm_ptrs(amm):
   print("amm shapes and [0][0]")
@@ -279,25 +283,32 @@ def extract_py_vars(est):
   # [v1,v2,v2,v3,v3,v3,v3,v4,v4,v4,v4,v4,v4,v4,v4]
   # (nsplits, [1,2,4,8]) 
   #but the last values get padded to 16
-  splitvals=np.array([[np.pad(l, (0,num_pad))]
+  
+  raw_splitvals_padded=np.array([[np.pad(l, (0,num_pad))]
             for l in raw_splitvals
-            ]).astype(np.int8)
+            ])
+  #Python: (X-offset) * scale; C++: X*scale + offset; before comparing to these splitvals
+  #WARN: these can overflow sometimes from int8 
+  splitvals=raw_splitvals_padded.clip(-128,127).astype(np.int8) 
+  #splitvals_raw [[[120  28 156  12  76 140 204   4  36  68 100 132 164 196 228   0]]
+  
+  encode_scales = reshape_split_lists(est.enc, 'scaleby').astype(np.float32)
+  raw_encode_offset = reshape_split_lists(est.enc, 'offset').astype(np.float32) 
   return {
       #x/indexes
       "splitdims": reshape_split_lists(est.enc, 'dim').astype(np.uint32), #these are what's called idxs in paper?
       "splitvals": splitvals,
-      "encode_scales":reshape_split_lists(est.enc, 'scaleby').astype(np.float32), 
-      "encode_offsets":reshape_split_lists(est.enc, 'offset').astype(np.float32), 
+      "encode_scales": encode_scales, 
+      "encode_offsets": -1*raw_encode_offset*encode_scales, 
       #q/lut
       "centroids": est.enc.centroids.astype(np.float32),
-      #"idxs": ,  #Only need to change if sparse matrix
-      # # if lut_work_const then c++ is row (ncodebooks,D) set to ncodebooks*[range(D)], else its ncodebooks*[sorted(permucation(range(D), nnz_per_centroid))]
+      #"idxs": ,  #only need to set if we have a sparse matrix; idxs is used in mithral_lut_sparse always, but idxs are fine by default
+      # if lut_work_const then c++ is row (ncodebooks,D) set to ncodebooks*[range(D)], else its ncodebooks*[sorted(permutation(range(D), nnz_per_centroid))]
       #Python encode_X (idxs?!) = offsets into raveled indxs + idxs=[[i%16]*ncodebooks for i in range(N)]), the offset is added to each idxs row
-      #C++ uses indxs for Q and Python for X(?!)
-      #cpp out_offset_sum/scale is set by results at _compute_offsets_scale_from_mins_maxs, after done learning luts in mithral_lut_dense&mithral_lut_spares. no need to copy
-      #py 
+      #cpp out_offset_sum/out_scale is set by results at _compute_offsets_scale_from_mins_maxs, after done learning luts in mithral_lut_dense&mithral_lut_spares. no need to copy
+      #   But then it's never used?
       "out_offset_sum": np.float32(est.offset),
-      "out_scale": np.float32(est.scale),
+      "out_scale":      np.float32(est.scale),
   }
 
 print({k: v.shape if isinstance(v, np.ndarray) else v 
@@ -308,7 +319,10 @@ print({k: v.shape if isinstance(v, np.ndarray) else v
 
 py_vars = extract_py_vars(est)
 [c, d,v,eo,es, osum, oscale] = itemgetter('centroids', 'splitdims','splitvals', 'encode_offsets', 'encode_scales', 'out_offset_sum', 'out_scale')(py_vars)
-#print(d,eo,es, v, sep='\n')
+print(py_vars, 'X: ', X, 'Q: ', Q, 'Y: ', Y, 'A_enc: ', est.A_enc, 'Luts: ', est.luts.reshape(est.luts.shape[0],-1), sep='\n')
+#print(np.ravel(est.A_enc, order='f')[:48])
+#print(np.ravel(est.luts.reshape(est.luts.shape[0],-1), order='c')[:48])
+
 #copying keeps order for these, but are the luts and codes the same?
 #print(est.A_enc, est.luts)
 #print(list(map(lambda i: (np.min(i), np.max(i)), [est.A_enc, est.luts])))
@@ -318,7 +332,6 @@ def copy_python_to_amm(py_est, amm):
   py_vars = extract_py_vars(py_est)
   [c, d,v,eo,es, osum, oscale] = itemgetter('centroids', 'splitdims','splitvals', 'encode_offsets', 'encode_scales', 'out_offset_sum', 'out_scale')(py_vars)
 
-  #amm.setCentroids(c) 
   #The centroid shape doens't matter? task (64,64) vs. est (4,16,64) 
   amm.setCentroidsCopyData(c)
   
@@ -330,8 +343,22 @@ def copy_python_to_amm(py_est, amm):
   amm.setEncode_offsets(eo)
   
   amm.out_offset_sum = osum
+  #Python oscale is linear, C++ is exponent (wrong?)
+  #C++ calculating scale
+  #  float exponent = std::ceil(std::log2f(out_scale));
+  #  out_scale = std::exp2(-exponent);  // reciprocal so we can use fma
+  #  out_scale *= (255.f - 1e-10f);  // so max val is at most just under 255
+  # Python
+  #Python calculating scale 
+  #  exponent = np.ceil(np.log2(gap))
+  #  scale = 2 ** int(-exponent)  # scale is a power of 2, so can just shift
+  #  scale *= (255.5 - 1e-10)  # so max val is at most 255
+  #Python uses scale by dividing right before set value
+  # C++ by imbedding change in luts:
+  #  out_offsets[c] *= out_scale;
+  
   amm.out_scale  = oscale
-  #amm.setIdxs(.astype(int))
+  #amm.setIdxs(.astype(int)) #only for non-dense
   
   #assert np.all(amm.getCentroids() == c) #shape wrong, return differently?
   assert np.all(np.ravel(amm.getCentroids()) == np.ravel(c)) 
@@ -393,14 +420,13 @@ def dists_enc_short(X_enc, Q_luts,
 
 def dists_enc_cpp(X_enc, Q_luts, 
             offset, scale, ncodebooks=2):
+  "uses no Python specific syntax"
   Q_luts=Q_luts.reshape(Q_luts.shape[0],-1)
   n,_ = X_enc.shape
   m,_=Q_luts.shape
   dists_out=np.zeros(n*m)
   luts=np.ravel(Q_luts, order='c')
   codes=np.ravel(X_enc, order='f')
-  print(luts[128:140]  , luts[500:512]  , luts[4090:])
-  print(codes[128:140] , codes[500:512] , codes[4090:])
   for i in range(m):
     lut = luts[i * ncodebooks*16: (i+1)*ncodebooks*16]
     for j in range(n):
@@ -409,50 +435,35 @@ def dists_enc_cpp(X_enc, Q_luts,
         dist += lut[codes[j + code_ix*n]]
       dists_out[i+j*m] = ((dist / scale) + offset)
   out = dists_out.reshape(n,m)
-  #assert(np.array_equal(np.ravel(out, order='f'), dists_out))	
   return out
 
-def dists_enc_cpp_easy(X_enc, Q_luts, 
-            offset, scale, ncodebooks=2):
-  #Q_luts=Q_luts.reshape(Q_luts.shape[0],-1)
-  n,_ = X_enc.shape
-  m,_= 128,0 #Q_luts.shape
-  dists_out=np.zeros(n*m)
-  luts=np.ravel(Q_luts, order='c')
-  codes=np.ravel(X_enc, order='c')
-  for i in range(m):
-    lut = luts[i * ncodebooks*16: (i+1)*ncodebooks*16]
-    for j in range(n):
-      dist = 0
-      for code_ix in range(ncodebooks):
-        dist += lut[codes[j*ncodebooks + code_ix]]
-      dists_out[i + j*m] = ((dist / scale) + offset)
-  return dists_out.reshape(n,m)
-  
 #Y_hat=dists_enc(est.enc, est.A_enc, est.luts, offset=est.offset, scale=est.scale)
 #print("python hardcode using sum", 1-r2_score(Y, Y_hat))
 #>>python hardcode using sum 7.626492367063253e-05
-#Y_hat=dists_enc_short(est.A_enc, est.luts, offset=est.offset, scale=est.scale)
-#print("python hardcode using sum", 1-r2_score(Y, Y_hat))
-Y_hat=dists_enc_cpp(est.A_enc, est.luts, offset=est.offset, scale=est.scale)
-print("cpp mimic", 1-r2_score(Y, Y_hat))
-print()
-#%%
+#Y_hat=dists_enc_cpp(est.A_enc, est.luts, offset=est.offset, scale=est.scale)
+#print("cpp mimic in python", 1-r2_score(Y, Y_hat))
 copy_python_to_amm(est, task.amm)
-task.amm.codes=est.A_enc
-task.amm.luts = est.luts.reshape(est.luts.shape[0],-1)
+#task.amm.codes=est.A_enc
+#task.amm.luts = est.luts.reshape(est.luts.shape[0],-1)
+task.mithral_encode_only()
+task.lut()
+# #Hard setting codes and luts works
+# good if C++ create's it's own luts
+# <0 if C++ creates it's own codes
+# <0 if C++ creates both luts and codes
 task.amm.scan_test()
 Y_hat=task.amm.out_mat
 print("c++ copied to hardcode using sum", 1-r2_score(Y, Y_hat))
-print()
-n,m=4096,128
-plt.hist(Y.flatten(),bins=30,label='Y')
-plt.hist(Y_hat.flatten(),bins=30,label='Y_hat')
-plt.legend()
-plt.show()
-#%%
+if r2_score(Y, Y_hat) < 0.99:
+  plt.title(f"WARN BASIC COPYING BAD 1-R^2: {1-r2_score(Y, Y_hat):.4f}")
+  plt.hist(Y.flatten(),bins=30,label='Y')
+  plt.hist(Y_hat.flatten(),bins=30,label='Y_hat')
+  plt.legend()
+  plt.show()
+#%% Trying hardcodes to debug, only copy luts and codes
+
 def hardcode_copy(py_test, amm):
-  #copy_python_to_amm(est, amm) #not used for scan
+  copy_python_to_amm(est, amm) #not used for scan
   
   #Only for testing; in prod C++ must learn these vars itself
   #If these are only 4 bit codes, then ith columns should substract to be in range[0-16] not [i*16,(i+1)*16]
@@ -460,7 +471,7 @@ def hardcode_copy(py_test, amm):
   copy =est.A_enc #- np.array([[16*i for i in range(w)]]*h)
   amm.tmp_codes=copy 
   assert np.all(amm.tmp_codes==copy)
-  amm.cast_zip_bolt_colmajor() #format in C++
+  amm.zip_bolt_colmajor_only() #format in C++
   #ix = o!=0
   #print('fraction unchanged: ', np.sum(amm.codes[ix] == o[ix])/o[ix].size) #didn't get changed?
   #assert(np.sum(amm.codes[ix] == o[ix])/o[ix].size < 0.2)
@@ -490,9 +501,7 @@ print("1-R^2 First half HARDCODE COPY: ",1-r2_score(Y[:,:64], Y_hat[:,:64]))
 task.scan()
 
 
-#%% Trying hardcodes to fix
-
-
+#%%  Copy Python to C++
 print_amm_ptrs(task.amm)
 print("copying python")
 copy_python_to_amm(est, task.amm)
@@ -520,7 +529,8 @@ Y_hat=est(X,Q)
 #why true? np.all(task.output()[3104:,50:]==0)
 #assert(np.all(task.amm.codes == est.A_enc)) #false why?
 #assert(np.all(task.amm.luts.shape==est.luts.shape)) #wrong dims
-#%%
+
+#%% Scrap
 copy_python_to_amm(est, task.amm)
 for i in range(99):
   c, *_ = itemgetter('centroids', 'splitdims','splitvals', 'encode_offsets', 'encode_scales', 'out_offset_sum', 'out_scale')(py_vars)

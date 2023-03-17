@@ -74,6 +74,16 @@ inline __m256 fma(__m256 a, __m256 b, __m256 c) {
     __asm__("vfmadd231ps %[a], %[b], %[c]" : [c] "+x" (res) : [a] "x" (a), [b] "x" (b));
     return res;
 }
+// returns (a -c) * b, elementwise (like Python)
+// Have not tested this
+inline __m256 fsm(__m256 a, __m256 c, __m256 b) {
+    __m256 res = a;
+    // subtract c from a using vsubps
+    __asm__("vsubps %[c], %[a], %[a]" : [a] "+x" (res) : [c] "x" (c));
+    // multiply the result by b using vfmadd231ps
+    __asm__("vfmadd231ps %[b], %[a], %[zero]" : [a] "+x" (res) : [b] "x" (b), [zero] "x" (_mm256_setzero_ps()));
+    return res;
+}
 
 inline __m256i avg_epu8(__m256i a, __m256i b) {
     __m256i res = _mm256_undefined_si256();
@@ -224,10 +234,22 @@ template<bool Signed=true, bool SameOrder=true>
 static inline __m256i load_4xf32_as_32xepi8_or_epu8(
     const float* x, const __m256& scales, const __m256& offsets)
 {
-    auto x0 = fma(_mm256_loadu_ps(x), scales, offsets);
-    auto x1 = fma(_mm256_loadu_ps(x + 8), scales, offsets);
-    auto x2 = fma(_mm256_loadu_ps(x + 16), scales, offsets);
-    auto x3 = fma(_mm256_loadu_ps(x + 24), scales, offsets);
+    auto x0 = fma(_mm256_loadu_ps(x)      , scales , offsets);
+    auto x1 = fma(_mm256_loadu_ps(x + 8)  , scales , offsets);
+    auto x2 = fma(_mm256_loadu_ps(x + 16) , scales , offsets);
+    auto x3 = fma(_mm256_loadu_ps(x + 24) , scales , offsets);
+    return pack_ps_epi8_or_epu8<Signed, SameOrder>(x0, x1, x2, x3);
+}
+
+template<bool Signed=true, bool SameOrder=true>
+static inline __m256i load_4xf32_as_32xepi8_or_epu8_fsm(
+    const float* x, const __m256& scales, const __m256& offsets)
+{
+    //changed to be how python does it (x-o)*s not x*s+o
+    auto x0 = fsm(_mm256_loadu_ps(x)      , offsets, scales );
+    auto x1 = fsm(_mm256_loadu_ps(x + 8)  , offsets, scales );
+    auto x2 = fsm(_mm256_loadu_ps(x + 16) , offsets, scales );
+    auto x3 = fsm(_mm256_loadu_ps(x + 24) , offsets, scales );
     return pack_ps_epi8_or_epu8<Signed, SameOrder>(x0, x1, x2, x3);
 }
 

@@ -26,6 +26,22 @@ void mithral_scan_test(const uint8_t* codes, int n, int ncodebooks, int m,
                        float offset, float scale,
                        const uint8_t* luts, uint16_t* float_dists_out) 
 { 
+    //Assumes you didn't zip codes
+    /*
+-exec source /home/cbenham/bolt/cpp/.gdbinit
+-exec plc
+    Python's results
+    codes
+        np.ravel(est.A_enc, order='f')[:24]
+        np.ravel(est.A_enc, order='f')[4096:4120]
+    Luts
+        np.ravel( est.luts.reshape(est.luts.shape[0],-1), order='c')[:24]
+        np.ravel( est.luts.reshape(est.luts.shape[0],-1), order='c')[4072:]
+    array([ 0,  1,  2,  3,  4,  5,  6,  7,  8,  9, 10, 11, 12, 13, 14, 15,  0, 1,  2,  3,  4,  5,  6,  7])
+    array([16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31, 16, 17, 18, 19, 20, 21, 22, 23])
+    array([ 0,  1,  3,  4,  6,  7,  9, 10, 12, 13, 15, 16, 18, 19, 21, 22,  0, 1,  3,  4,  6,  7,  9, 10])
+    array([120, 135, 150, 165, 180, 195, 210, 225,   0,  15,  30,  45,  60, 75,  90, 105, 120, 135, 150, 165, 180, 195, 210, 225])
+    */
   for (int i = 0; i < m; i++) {
     const uint8_t* lut = luts + i * ncodebooks * 16;
     for (int j = 0; j < n; j++) {
@@ -102,31 +118,33 @@ void mithral_encode(
         }
         split_idx += nsplits_per_codebook;
 
+        std::cout << "GRIB: REMOVE, only for debugging, #pragma" << std::endl; 
         for (int b = 0; b < nblocks; b++) { // for each block. 256 simd is to process 32 rows in parrallel on 1 splitix of 1 code book and return 8bit encodes for each row.
-            __m256i codes = _mm256_setzero_si256();
-            #pragma unroll
+            volatile __m256i codes= _mm256_setzero_si256(); 
+            // #pragma unroll // TODO GRIB uncomment
             for (int s = 0; s < nsplits_per_codebook; s++) {
-                auto vscales = current_vscales[s];
+                //used to scale x for current subspace so vpslitval is int8
+                auto vscales = current_vscales[s]; 
                 auto voffsets = current_voffsets[s];
                 // auto voffsets = _mm256_setzero_si256();
-                auto vsplitvals_lut = current_vsplitval_luts[s];
-                auto vsplitvals = _mm256_shuffle_epi8(
+                volatile auto vsplitvals_lut = current_vsplitval_luts[s];
+                volatile auto vsplitvals = _mm256_shuffle_epi8( //register $ymm4
                         vsplitvals_lut, codes); // codes = group_ids, range 0-15 for selecting centroids and 0-7 for split vals. Each code entry represent 'node' of X row
 
                 auto x_ptr = x_ptrs[s];
                 x_ptrs[s] += block_nrows;
-
                 // true = signed saturation; better because cmp instructions
                 // exist for epi8 but not epu8
-                auto x_i8 = load_4xf32_as_32xepi8_or_epu8<true, !DeferPerm>(
+                volatile auto x_i8= load_4xf32_as_32xepi8_or_epu8<true, !DeferPerm>(
                     // x_ptr, vscales);
                     x_ptr, vscales, voffsets);
+                
+                volatile auto masks = _mm256_cmpgt_epi8(x_i8, vsplitvals); 
+                // map -1 -> 1; 0 stays the same. _mm256_cmpgt_epi8 always returns "all 1s" aka -1
+                volatile auto masks_0_or_1 = _mm256_sign_epi8(masks, masks);
 
-                auto masks = _mm256_cmpgt_epi8(x_i8, vsplitvals);
-                // map -1 -> 1; 0 stays the same. Why? _mm256_cmpgt_epi8 always returns positive values?
-                auto masks_0_or_1 = _mm256_sign_epi8(masks, masks);
-                //Below actually screws things up, why? 
-                //assert(_mm256_movemask_epi8(reinterpret_cast<__m256i>(_mm256_cmp_ps(reinterpret_cast<__m256>(masks), reinterpret_cast<__m256>(masks_0_or_1), _CMP_EQ_OQ)))== 0xffff);
+               //volatile auto&& masks_copy =  &masks;
+               // std::cout << masks_copy << std::endl; 
 
                 //is this correct? 0*2*2*2*2=0 each time, never go down 'left' branch of tree always compare against first
                 //But if you make your codes go 'down' then they won't select the correct centroid out of 16, it could only be out of 8?
@@ -147,6 +165,7 @@ void mithral_encode(
             out_ptr += block_nrows;
         }
     }
+    
 }
 
 // version with int16 data

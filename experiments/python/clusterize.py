@@ -386,7 +386,7 @@ class MultiSplit(object):
         self.scaleby = scaleby
         self.offset = offset
 
-    def preprocess_x(self, x):
+    def preprocess_x(self, x): #C++ originally did X*s + o
         if self.offset is not None:
             x = x - self.offset
         if self.scaleby is not None:

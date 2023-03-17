@@ -150,8 +150,14 @@ struct mithral_amm {
             encode_offsets, ncodebooks, tmp_codes.data());
         zip_bolt_colmajor(tmp_codes.data(), N, ncodebooks, codes.data());
     }
+
+    void mithral_encode_only(const InputT* X) {
+        mithral_encode(
+            X, N, D, splitdims, splitvals, encode_scales,
+            encode_offsets, ncodebooks, tmp_codes.data());
+    }    
     
-    void cast_zip_bolt_colmajor () {
+    void zip_bolt_colmajor_only () {
         //only for if copied codes into c++ from python
         zip_bolt_colmajor(tmp_codes.data(), N, ncodebooks, codes.data());
     }
@@ -494,6 +500,7 @@ void _dense_lut_f32_fused(const float* Q, int nrows, int ncols, int ncodebooks,
     __m256*__restrict__ mins, __m256*__restrict__ maxs,
     const float* centroids, float*__restrict__ out_offsets,
     float& out_offset_sum, float& out_scale, float*__restrict__ out)
+    //Why aren't out_offset_sum and out_scale used?
 {
     static constexpr int ncentroids = 16;
     static constexpr int lut_sz = ncentroids;

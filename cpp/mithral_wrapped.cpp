@@ -85,6 +85,7 @@ PYBIND11_MODULE(mithral_wrapped, m) {
            return mithral_amm_task<float>{N,D,M,ncodebooks, lut_work_const};
        }))
        .def("encode"                                                           , &mithral_amm_task<float>::encode)
+       .def("mithral_encode_only"                                              , &mithral_amm_task<float>::mithral_encode_only)
        .def("lut"                                                              , &mithral_amm_task<float>::lut)
        .def("scan"                                                             , &mithral_amm_task<float>::scan)
        .def("run_matmul"                                                       , &mithral_amm_task<float>::run_matmul)
@@ -131,8 +132,9 @@ PYBIND11_MODULE(mithral_wrapped, m) {
                                      encode_scales, encode_offsets,
                                       idxs,  nnz_per_centroid};
         }))
-        .def("cast_zip_bolt_colmajor"       , &mithral_amm<float>::cast_zip_bolt_colmajor)
-        .def("scan_test"       , &mithral_amm<float>::scan_test)
+        //can only write PyBind functions that don't take in data
+        .def("scan_test"                    , &mithral_amm<float>::scan_test)
+        .def("zip_bolt_colmajor_only"       , &mithral_amm<float>::zip_bolt_colmajor_only)
         // ctor params
         .def_readwrite("N"                  , &mithral_amm<float>::N)
         .def_readwrite("D"                  , &mithral_amm<float>::D)
