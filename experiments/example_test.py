@@ -284,12 +284,12 @@ def extract_py_vars(est):
   # (nsplits, [1,2,4,8]) 
   #but the last values get padded to 16
   
-  raw_splitvals_padded=np.array([[np.pad(l, (0,num_pad))]
+  raw_splitvals_padded=np.array([np.pad(l, (1,0))
             for l in raw_splitvals
             ])
   #Python: (X-offset) * scale; C++: X*scale + offset; before comparing to these splitvals
   #WARN: these can overflow sometimes from int8 
-  splitvals=raw_splitvals_padded.clip(-128,127).astype(np.int8) 
+  splitvals=(raw_splitvals_padded-128).clip(-128,127).astype(np.int8)
   #splitvals_raw [[[120  28 156  12  76 140 204   4  36  68 100 132 164 196 228   0]]
   
   encode_scales = reshape_split_lists(est.enc, 'scaleby').astype(np.float32)
@@ -299,7 +299,7 @@ def extract_py_vars(est):
       "splitdims": reshape_split_lists(est.enc, 'dim').astype(np.uint32), #these are what's called idxs in paper?
       "splitvals": splitvals,
       "encode_scales": encode_scales, 
-      "encode_offsets": -1*raw_encode_offset*encode_scales, 
+      "encode_offsets": raw_encode_offset*-encode_scales - 128, 
       #q/lut
       "centroids": est.enc.centroids.astype(np.float32),
       #"idxs": ,  #only need to set if we have a sparse matrix; idxs is used in mithral_lut_sparse always, but idxs are fine by default
@@ -313,9 +313,6 @@ def extract_py_vars(est):
 
 print({k: v.shape if isinstance(v, np.ndarray) else v 
        for k,v in extract_py_vars(est).items()})
-
-#print('num_nan', {k: np.isnan(v).sum() if isinstance(v, np.ndarray) else 0
-#       for k,v in extract_py_vars(est).items()})
 
 py_vars = extract_py_vars(est)
 [c, d,v,eo,es, osum, oscale] = itemgetter('centroids', 'splitdims','splitvals', 'encode_offsets', 'encode_scales', 'out_offset_sum', 'out_scale')(py_vars)
@@ -386,6 +383,8 @@ def dists_enc(self, X_enc, Q_luts, unquantize=True,
         centroid_dists = lut.ravel()[X_enc.ravel()]
         dists = centroid_dists.reshape(X_enc.shape)
         dists = dists.reshape(dists.shape[0], -1, self.upcast_every)
+        # #upcast can be less than ncodebooks; in c++ you can't do the mutli-stage averaging more than 256 times, so if you had 1024 codebooks you'd seperate the averaging into 4 256 chunks and then average the final 4
+        # #below is to have python mimic this upcast behaviour
         dists = dists.sum(2)
         dists = np.clip(dists, 0, 255).sum(axis=-1)
         if self.quantize_lut and unquantize:
@@ -401,12 +400,6 @@ def dists_enc_short(X_enc, Q_luts,
   for i, lut in enumerate(Q_luts):
       centroid_dists = lut.ravel()[X_enc.ravel()]
       dists = centroid_dists.reshape(X_enc.shape)
-      #print(i, dists)
-      # #upcast can be less than ncodebooks; in c++ you can't do the mutli-stage averaging more than 256 times, so if you had 1024 codebooks you'd seperate the averaging into 4 256 chunks and then average the final 4
-      # #below is to have python mimic this upcast behaviour
-      #dists = dists.reshape(dists.shape[0], -1, upcast_every)
-      #dists = dists.sum(2)
-      
       dists = np.clip(dists, 0, 255).sum(axis=-1)
       dists = (dists / scale) + offset
       
@@ -440,8 +433,24 @@ def dists_enc_cpp(X_enc, Q_luts,
 #Y_hat=dists_enc(est.enc, est.A_enc, est.luts, offset=est.offset, scale=est.scale)
 #print("python hardcode using sum", 1-r2_score(Y, Y_hat))
 #>>python hardcode using sum 7.626492367063253e-05
-#Y_hat=dists_enc_cpp(est.A_enc, est.luts, offset=est.offset, scale=est.scale)
-#print("cpp mimic in python", 1-r2_score(Y, Y_hat))
+
+if False:
+  #Ablations
+  #If cast vals to int8 would py also be bad?
+  est.fit(X,Q)
+  py_vars = extract_py_vars(est)
+  [c, d,v,eo,es, osum, oscale] = itemgetter('centroids', 'splitdims','splitvals', 'encode_offsets', 'encode_scales', 'out_offset_sum', 'out_scale')(py_vars)
+  for code_ix, a in enumerate(est.enc.splits_lists):
+    for row_ix, split in enumerate(a):
+      split.vals = v[code_ix][2**row_ix:2**(row_ix+1)] #c++ is 1 indexed 
+      split.offset = eo[code_ix][row_ix]
+       
+  est.A_enc = est.enc.encode_X(X)
+  est.luts, est.offset, est.scale = est.enc.encode_Q(Q.T)
+  est.fit(X,Q) #So est is in good state again by end
+Y_hat=dists_enc_cpp(est.A_enc, est.luts, offset=est.offset, scale=est.scale)
+print("cpp mimic in python", 1-r2_score(Y, Y_hat))
+#%%
 copy_python_to_amm(est, task.amm)
 #task.amm.codes=est.A_enc
 #task.amm.luts = est.luts.reshape(est.luts.shape[0],-1)

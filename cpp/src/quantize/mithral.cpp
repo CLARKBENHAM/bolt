@@ -95,32 +95,35 @@ void mithral_encode(
     for (int c = 0; c < ncodebooks; c++) {
         // compute input and output column starts
         auto out_ptr = out + (out_col_stride * c);
+       
+        volatile auto scales2 = scales;
+        volatile auto offsets2 = offsets;
+
         for (int s = 0; s < nsplits_per_codebook; s++) {
             auto splitdim = splitdims[split_idx + s];
             x_ptrs[s] = X + (x_col_stride * splitdim);
-            auto splitvals_ptr = all_splitvals + (vals_per_split * c);//What I'd expect, unless there's a reason to read from different memory each time(?) 
+            volatile auto splitvals_ptr = all_splitvals + (vals_per_split * c);//What I'd expect, unless there's a reason to read from different memory each time(?) 
             //auto splitvals_ptr = all_splitvals + (vals_per_split * split_idx); //shift by 16*4 entries per ncodebook
             //-exec p/d *(int8_t *)&current_vsplitval_luts[0]@64
             current_vsplitval_luts[s] = _mm256_broadcastsi128_si256(
                 load_si128i((const __m128i*)splitvals_ptr)); //loads 16 8bits at once from memory, then broadcasts to 256 bits
                 //load_si128i loads 16 int8's at once, _mm256_broadcastsi128_si256 copies [128] to [128,128]
                 //you shift pointer over by 16*sizeof(int8 in bytes)=16 bytes=128bits for each codebook, to next splitvals
-                // Codes take values 0-15 for comparing values in splitvals_luts (max 0,3,7,15) which then become index of centroid
-                
-                
+                // Codes take values 0-15 for comparing values in splitvals_luts (max 0,3,7,15) the last is the index of the centroid
                 
                 //you shift over by 16*4*sizeof(int8 in bytes)=64 bytes for each codebook
                 //So after each codebook you load the same [64g, 64unused, 64g, 64unused] for each split, then shift the 64 for next codebook
                 // Codes take values 0-8 for selecting values in splitvals_luts each 8 bits, so 
                 // [0-8*8, 8*8-128 unused], [128-128+8*8, 128+8*8-256 unused] which lines up
-            current_vscales[s] = _mm256_set1_ps(scales[split_idx + s]);
-            current_voffsets[s] = _mm256_set1_ps(offsets[split_idx + s]);
+            current_vscales[s] = _mm256_set1_ps(scales2[split_idx + s]);
+            current_voffsets[s] = _mm256_set1_ps(offsets2[split_idx + s]);
         }
         split_idx += nsplits_per_codebook;
 
         std::cout << "GRIB: REMOVE, only for debugging, #pragma" << std::endl; 
         for (int b = 0; b < nblocks; b++) { // for each block. 256 simd is to process 32 rows in parrallel on 1 splitix of 1 code book and return 8bit encodes for each row.
-            volatile __m256i codes= _mm256_setzero_si256(); 
+            // volatile __m256i codes= _mm256_setzero_si256();  //Original Assumed values level changes each time
+            volatile __m256i codes=_mm256_set1_epi8(1); //1x can multiply each time
             // #pragma unroll // TODO GRIB uncomment
             for (int s = 0; s < nsplits_per_codebook; s++) {
                 //used to scale x for current subspace so vpslitval is int8
@@ -128,7 +131,7 @@ void mithral_encode(
                 auto voffsets = current_voffsets[s];
                 // auto voffsets = _mm256_setzero_si256();
                 volatile auto vsplitvals_lut = current_vsplitval_luts[s];
-                volatile auto vsplitvals = _mm256_shuffle_epi8( //register $ymm4
+                volatile auto vsplitvals = _mm256_shuffle_epi8( 
                         vsplitvals_lut, codes); // codes = group_ids, range 0-15 for selecting centroids and 0-7 for split vals. Each code entry represent 'node' of X row
 
                 auto x_ptr = x_ptrs[s];
@@ -143,17 +146,25 @@ void mithral_encode(
                 // map -1 -> 1; 0 stays the same. _mm256_cmpgt_epi8 always returns "all 1s" aka -1
                 volatile auto masks_0_or_1 = _mm256_sign_epi8(masks, masks);
 
-               //volatile auto&& masks_copy =  &masks;
-               // std::cout << masks_copy << std::endl; 
+				//Pythons pull from a different group index each time, it's not an index from a flat array
+				//	eg 0 to 0 to to 0 pulls from v1,v2,v3,v4 
+                //But in c++ only have 1 "level", current_vsplitval_luts is the same for each.
+                //    splitvals_ptr only changes with 'c'!
+                //  if we picked a different splitvals_ptr, 0,1-2,3-6,7-15 in original splitvals becomes 0 indexes new level
+                //Have to make C++ 1 index. I pad python at the start
 
-                //is this correct? 0*2*2*2*2=0 each time, never go down 'left' branch of tree always compare against first
-                //But if you make your codes go 'down' then they won't select the correct centroid out of 16, it could only be out of 8?
-                // I'd expect you have codes for last splitvals range over [8-15], then multiply by 2 + 1 and subtract 16 to get centroid idx
-                if (s > 0) {//don't need if statement
-                    // shift left by multiplying by 2, by adding to itself
-                    codes = _mm256_add_epi8(codes, codes);
+                //if (s > 0) {//for old way
+                //    // shift left by multiplying by 2, by adding to itself
+                //    codes = _mm256_add_epi8(codes, codes);
+                //}
+
+                //subtract so last centroid_ix in [0,15] 
+                if (s==3) {
+                    __m256i so_centroids_0ix =_mm256_set1_epi8(8); 
+                    codes =_mm256_sub_epi8(codes, so_centroids_0ix); 
                 }
-
+                // shift left by multiplying by 2, by adding to itself
+                codes = _mm256_add_epi8(codes, codes);
                 // OR in new low bit
                 codes = _mm256_or_si256(codes, masks_0_or_1);
             }
@@ -161,6 +172,8 @@ void mithral_encode(
                 codes = _mm256_permutevar8x32_epi32(
                     codes, _mm256_setr_epi32(0,4, 1,5, 2,6, 3,7));
             }
+            __m256i centroids_against_codebook =_mm256_set1_epi8(c*16);  //remove when zip/do for real?
+            codes = _mm256_add_epi8(codes, centroids_against_codebook);
             _mm256_storeu_si256((__m256i*)out_ptr, codes);
             out_ptr += block_nrows;
         }

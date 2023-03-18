@@ -386,11 +386,19 @@ class MultiSplit(object):
         self.scaleby = scaleby
         self.offset = offset
 
-    def preprocess_x(self, x): #C++ originally did X*s + o
+    def preprocess_x(self, x):
         if self.offset is not None:
             x = x - self.offset
         if self.scaleby is not None:
             x = x * self.scaleby
+        return x
+    
+    #c++ way, for ablations only
+    def preprocess_x_like_cpp(self, x):
+        if self.scaleby is not None:
+            x = x * self.scaleby
+        if self.offset is not None:
+            x = x + self.offset
         return x
 
 
@@ -1933,7 +1941,7 @@ def assignments_from_multisplits(X, splits):
         # if split.scaleby is not None:
         #     x = x * split.scaleby
         # indicators = x > vals
-        indicators = split.preprocess_x(X[:, split.dim]) > vals
+        indicators = split.preprocess_x_like_cpp(X[:, split.dim]) > vals
         group_ids = (group_ids * 2) + indicators
 
     if nsplits <= nsplits_affecting_group_id:
@@ -1950,7 +1958,7 @@ def assignments_from_multisplits(X, splits):
         # if split.scaleby is not None:
         #     x = x * split.scaleby
         # indicators = x > vals
-        indicators = split.preprocess_x(X[:, split.dim]) > vals
+        indicators = split.preprocess_x_like_cpp(X[:, split.dim]) > vals
         assignments = (assignments * 2) + indicators
 
     return assignments

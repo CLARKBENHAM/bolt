@@ -74,8 +74,17 @@ inline __m256 fma(__m256 a, __m256 b, __m256 c) {
     __asm__("vfmadd231ps %[a], %[b], %[c]" : [c] "+x" (res) : [a] "x" (a), [b] "x" (b));
     return res;
 }
-// returns (a -c) * b, elementwise (like Python)
-// Have not tested this
+// Have not tested this, should be like Python. From Balance
+// returns (a -c) * b, elementwise 
+inline __m256 fsm(__m256 a, __m256 b, __m256 c) {
+    __m256 res = a;
+    __asm__("vsubps %[b], %[a], %[a]\n\t"
+            "vmulps %[c], %[a], %[a]"
+            : [a] "+x" (res)
+            : [b] "x" (b), [c] "x" (c));
+    return res;
+}
+/* Creative:
 inline __m256 fsm(__m256 a, __m256 c, __m256 b) {
     __m256 res = a;
     // subtract c from a using vsubps
@@ -84,6 +93,7 @@ inline __m256 fsm(__m256 a, __m256 c, __m256 b) {
     __asm__("vfmadd231ps %[b], %[a], %[zero]" : [a] "+x" (res) : [b] "x" (b), [zero] "x" (_mm256_setzero_ps()));
     return res;
 }
+*/
 
 inline __m256i avg_epu8(__m256i a, __m256i b) {
     __m256i res = _mm256_undefined_si256();

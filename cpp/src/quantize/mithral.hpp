@@ -155,6 +155,7 @@ struct mithral_amm {
         mithral_encode(
             X, N, D, splitdims, splitvals, encode_scales,
             encode_offsets, ncodebooks, tmp_codes.data());
+        codes = tmp_codes; 
     }    
     
     void zip_bolt_colmajor_only () {
