@@ -37,10 +37,10 @@ void mithral_scan_test(const uint8_t* codes, int n, int ncodebooks, int m,
     Luts
         np.ravel( est.luts.reshape(est.luts.shape[0],-1), order='c')[:24]
         np.ravel( est.luts.reshape(est.luts.shape[0],-1), order='c')[4072:]
-    array([ 0,  1,  2,  3,  4,  5,  6,  7,  8,  9, 10, 11, 12, 13, 14, 15,  0, 1,  2,  3,  4,  5,  6,  7])
-    array([16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31, 16, 17, 18, 19, 20, 21, 22, 23])
-    array([ 0,  1,  3,  4,  6,  7,  9, 10, 12, 13, 15, 16, 18, 19, 21, 22,  0, 1,  3,  4,  6,  7,  9, 10])
-    array([120, 135, 150, 165, 180, 195, 210, 225,   0,  15,  30,  45,  60, 75,  90, 105, 120, 135, 150, 165, 180, 195, 210, 225])
+    [ 0  2  4  4  8  8  8  8  8 10 12 12 12 14 14 15  0  2  4  4  8  8  8  8]
+    [16 18 20 20 24 24 24 24 24 26 28 28 28 30 30 31 16 18 20 20 24 24 24 24]
+    [ 0  1  3  4  6  7  9 10 12 13 15 16 18 19 21 22  0  1  3  4  6  7  9 10]
+    [120 135 150 165 180 195 210 225   0  15  30  45  60  75  90 105 120 135 150 165 180 195 210 225]
     */
   for (int i = 0; i < m; i++) {
     const uint8_t* lut = luts + i * ncodebooks * 16;
@@ -158,7 +158,7 @@ void mithral_encode(
                 //    codes = _mm256_add_epi8(codes, codes);
                 //}
 
-                //subtract so last centroid_ix in [0,15] 
+                //subtract so last centroid_ix in [0,15]
                 if (s==3) {
                     __m256i so_centroids_0ix =_mm256_set1_epi8(8); 
                     codes =_mm256_sub_epi8(codes, so_centroids_0ix); 

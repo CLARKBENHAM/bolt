@@ -219,7 +219,7 @@ est.fit(X,Q)
 s=timer()
 Y_hat=est(X, Q) #makes est. but equivalent to est(None, Q)
 e=timer()
-print(f"Python implementation of Mithral faster by: {old_t/(e-s)}, 1-R^2: {1-r2_score(Y, Y_hat)}")
+print(f"Python implementation of Mithral faster by: {old_t/(e-s)}, 1-R^2: {1-r2_score(Y, Y_hat)}, warn will be off since we modified python; change back to process_x")
 est_attr=['A_enc',
   'enc',
   'fit',
@@ -294,6 +294,8 @@ def extract_py_vars(est):
   
   encode_scales = reshape_split_lists(est.enc, 'scaleby').astype(np.float32)
   raw_encode_offset = reshape_split_lists(est.enc, 'offset').astype(np.float32) 
+  c = est.enc.centroids.astype(np.float32)
+  reshaped_centroids = np.concatenate((np.ravel(c[0], order='f'), np.ravel(c[1], order='f')))
   return {
       #x/indexes
       "splitdims": reshape_split_lists(est.enc, 'dim').astype(np.uint32), #these are what's called idxs in paper?
@@ -301,7 +303,7 @@ def extract_py_vars(est):
       "encode_scales": encode_scales, 
       "encode_offsets": raw_encode_offset*-encode_scales - 128, 
       #q/lut
-      "centroids": est.enc.centroids.astype(np.float32),
+      "centroids": reshaped_centroids,
       #"idxs": ,  #only need to set if we have a sparse matrix; idxs is used in mithral_lut_sparse always, but idxs are fine by default
       # if lut_work_const then c++ is row (ncodebooks,D) set to ncodebooks*[range(D)], else its ncodebooks*[sorted(permutation(range(D), nnz_per_centroid))]
       #Python encode_X (idxs?!) = offsets into raveled indxs + idxs=[[i%16]*ncodebooks for i in range(N)]), the offset is added to each idxs row
@@ -430,12 +432,12 @@ def dists_enc_cpp(X_enc, Q_luts,
   out = dists_out.reshape(n,m)
   return out
 
-#Y_hat=dists_enc(est.enc, est.A_enc, est.luts, offset=est.offset, scale=est.scale)
-#print("python hardcode using sum", 1-r2_score(Y, Y_hat))
-#>>python hardcode using sum 7.626492367063253e-05
 
-if False:
-  #Ablations
+
+#Setup Python to be how C++ expects it
+
+if True: #Make it false when debugging
+  #Ablations, Do Python the way C++ is done
   #If cast vals to int8 would py also be bad?
   est.fit(X,Q)
   py_vars = extract_py_vars(est)
@@ -447,7 +449,12 @@ if False:
        
   est.A_enc = est.enc.encode_X(X)
   est.luts, est.offset, est.scale = est.enc.encode_Q(Q.T)
+  Y_hat=dists_enc(est.enc, est.A_enc, est.luts, offset=est.offset, scale=est.scale)
+  print("cpp mimic in python; to int8", 1-r2_score(Y, Y_hat))
+  print("Vars how C++ should make them")
+  print(py_vars, 'X: ', X, 'Q: ', Q, 'Y: ', Y, 'A_enc: ', est.A_enc, 'Luts: ', est.luts.reshape(est.luts.shape[0],-1), sep='\n')
   est.fit(X,Q) #So est is in good state again by end
+  
 Y_hat=dists_enc_cpp(est.A_enc, est.luts, offset=est.offset, scale=est.scale)
 print("cpp mimic in python", 1-r2_score(Y, Y_hat))
 #%%
@@ -462,7 +469,7 @@ task.lut()
 # <0 if C++ creates both luts and codes
 task.amm.scan_test()
 Y_hat=task.amm.out_mat
-print("c++ copied to hardcode using sum", 1-r2_score(Y, Y_hat))
+print("c++ (making own codes/luts) or (copied luts/cdoes) using sum", 1-r2_score(Y, Y_hat))
 if r2_score(Y, Y_hat) < 0.99:
   plt.title(f"WARN BASIC COPYING BAD 1-R^2: {1-r2_score(Y, Y_hat):.4f}")
   plt.hist(Y.flatten(),bins=30,label='Y')
