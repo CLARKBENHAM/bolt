@@ -368,6 +368,9 @@ void zip_bolt_colmajor(const uint8_t* codes_in, int64_t nrows,
     // if (ncodebooks % 64 == 0) {
     //     zip_bolt_colmajor<64>(codes_in, nrows, ncodebooks, codes_out); return;
     // }
+    // if (ncodebooks % 32 == 0) {
+    //     zip_bolt_colmajor<32>(codes_in, nrows, ncodebooks, codes_out); return;
+    // }
     // if (ncodebooks % 16 == 0) {
     //     zip_bolt_colmajor<16>(codes_in, nrows, ncodebooks, codes_out); return;
     // }
@@ -529,7 +532,7 @@ void mithral_scan(const uint8_t* codes, int64_t nblocks, int ncodebooks,
                   int noutputs, const uint8_t* luts, uint8_t* dists_out)
 {
     // mithral_scan<128, 2>(codes, nblocks, ncodebooks, noutputs, luts, dists_out);
-    mithral_scan_chunk<16, 2, uint8_t>(codes, nblocks, ncodebooks, noutputs, luts, dists_out);
+    mithral_scan_in_chunks<16, 2, uint8_t>(codes, nblocks, ncodebooks, noutputs, luts, dists_out);
     // if (ncodebooks >= 4) {
     //     mithral_scan<128, 2>(codes, nblocks, ncodebooks, noutputs, luts, dists_out);
     // } else {
@@ -540,7 +543,7 @@ void mithral_scan(const uint8_t* codes, int64_t nblocks, int ncodebooks,
 void mithral_scan(const uint8_t* codes, int64_t nblocks, int ncodebooks,
                   int noutputs, const uint8_t* luts, uint16_t* dists_out)
 {
-    mithral_scan_chunk<16, 2, uint16_t>(codes, nblocks, ncodebooks, noutputs, luts, dists_out);
+    mithral_scan_in_chunks<16, 2, uint16_t>(codes, nblocks, ncodebooks, noutputs, luts, dists_out);
 }
 // void mithral_scan_notile(const uint8_t* codes, int64_t nblocks, int ncodebooks,
 // // void mithral_scan(const uint8_t* codes, int64_t nblocks, int ncodebooks,

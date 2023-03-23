@@ -83,7 +83,7 @@ void mithral_lut_sparse(const float* Q, int nrows, int ncols, int ncodebooks,
 
 // ------------------------ scan
 
-//have to make the copy since mithral_scan_chunk in anon namespace
+//have to make the copy since mithral_scan_in_chunks in anon namespace
 void mithral_scan(const uint8_t* codes, int64_t nblocks, int ncodebooks,
                   int noutputs, const uint8_t* luts, uint8_t* dists_out);
 
@@ -247,21 +247,16 @@ namespace {
 
 // https://godbolt.org/z/BMx6D7 (also includes zip2_4b_colmajor to compare)
 // inline void zip_bolt_colmajor_v2(const uint8_t* codes_in, int64_t nrows,
-// # Kind of matches, but this fails for ncodebooks > 2
-// c=np.copy(task.amm.codes)
+//
+// # tested matches Python ncodebooks=32 random X/Q
+// c=np.copy(task.amm.tmp_codes)
 // out=np.copy(c)
 // task.amm.zip_bolt_colmajor_only()
 // for i in range(ncodebooks//2):
 //   x=np.bitwise_or(c[:,2*i], 16*c[:,2*i+1])%256
-//   out[:,2*i]=x
+//   out[:,i]=x
+// print(list(map(np.unique, np.where(out!=task.amm.codes))))
 // assert(np.all(out==task.amm.codes))
-//
-// # Seperately for ncodebooks=8 and random X/Q below passes.
-// # There might be a bug here since not enough entries are changed for >2 codebooks?
-// c=np.copy(task.amm.codes)
-// task.amm.zip_bolt_colmajor_only()
-// assert(np.all(c[:,3:]==task.amm.codes[:,3:]))
-// assert(np.all(c[2144:,:]==task.amm.codes[2144:,:]))
 template<int NReadColsAtOnce=2>
 inline void zip_bolt_colmajor(const uint8_t* codes_in, int64_t nrows,
                               uint32_t ncodebooks, uint8_t* codes_out)
@@ -314,43 +309,27 @@ inline void zip_bolt_colmajor(const uint8_t* codes_in, int64_t nrows,
                 auto initial_col_in = (g * ncols_in_per_group) + (2 * gg);
                 auto col_out = initial_col_in / 2;
                 in_col_ptrs[gg] = codes_in + (initial_col_in * in_col_stride);
-                out_ptrs[gg] = codes_out + (col_out * simd_vec_sz);
+                out_ptrs[gg] = codes_out + (col_out * in_col_stride); 
             }
             // for each block
             // #pragma unroll
             for (int b = 0; b < nblocks; b++) {
                 #pragma unroll
                 for (int gg = 0; gg < ncols_out_per_group; gg++) {
-                    // // initialize col starts
-                    // auto initial_col_in = (g * ncols_in_per_group) + (2 * gg);
-                    // auto col_out = initial_col_in / 2;
-                    // auto initial_col_ptr = codes_in + (initial_col_in * in_col_stride);
-                    // auto out_col_ptr = codes_out + (col_out * simd_vec_sz);
-                    // // for each block
-                    // for (int b = 0; b < nblocks; b++) {
-                    // auto x0 = load_si256i(initial_col_ptr + 0 * in_col_stride);
-                    // auto x1 = load_si256i(initial_col_ptr + 1 * in_col_stride);
-                    // initial_col_ptr += simd_vec_sz;
                     auto in_ptr = in_col_ptrs[gg];
-                    auto x0 = load_si256i(in_ptr + 0 * in_col_stride);
-                    auto x1 = load_si256i(in_ptr + 1 * in_col_stride);
-                    // initial_col_ptr += simd_vec_sz;
+                    auto x0 = load_si256i(in_ptr + 0 * in_col_stride); 
+                    auto x1 = load_si256i(in_ptr + 1 * in_col_stride);//+in_col_stride to get row adjacent val 
                     in_col_ptrs[gg] += simd_vec_sz;
 
                     // pack bits and store result
                     auto x01 = _mm256_or_si256(x0, _mm256_slli_epi16(x1, 4));
                     _mm256_store_si256((__m256i*)(out_ptrs[gg]), x01);
-                    out_ptrs[gg] += simd_vec_sz * ncolgroups;
-                    // _mm256_store_si256((__m256i*)out_col_ptr, x01);
-                    // _mm256_stream_si256((__m256i*)out_col_ptr, x01); // 4x slower
-                    // out_col_ptr += simd_vec_sz * ncolgroups;
-                    // __builtin_prefetch(out_col_ptr + 16 * simd_vec_sz * ncolgroups);
-                    // __builtin_prefetch(out_col_ptr + 16 * simd_vec_sz * ncodebooks / 2);
+                    out_ptrs[gg] += simd_vec_sz;
                 }
             }
         }
         codes_in += chunk_sz;
-        codes_out += chunk_sz * ncodebooks / 2;
+        codes_out += chunk_sz; 
     }
 }
 
@@ -1459,7 +1438,7 @@ void mithral_scan_nochunk(const uint8_t* codes, int64_t nblocks, int ncodebooks,
 
 template<int UpcastEvery=128, int _OutTileSz=2, typename OutType=uint8_t> //OutType should be uint8 or uint16
 // void mithral_scan_tiled(const uint8_t* codes, int64_t nblocks, int ncodebooks,
-void mithral_scan_chunk(const uint8_t* codes, int64_t nblocks, int ncodebooks,
+void mithral_scan_in_chunks(const uint8_t* codes, int64_t nblocks, int ncodebooks,
                   int noutputs, const uint8_t* luts, OutType* dists_out)
 {
     static constexpr int OutTileSz = _OutTileSz > 0 ? _OutTileSz : 1;
@@ -1532,12 +1511,13 @@ void mithral_scan_chunk(const uint8_t* codes, int64_t nblocks, int ncodebooks,
             mithral_scan_T<UpcastEvery, OutTileSz, OutType>(
                codes_ptr, use_nblocks, ncodebooks, lut_ptr, out_ptr);
 
-            //  // This actually works
+            //// This actually works if don't zip_col
             //mithral_scan_test(codes_ptr, 4096, ncodebooks, 2,
             //           0, 0.0156,
             //           lut_ptr, out_ptr);
-            //out_ptr += out_col_stride * OutTileSz;
-            //lut_ptr += lut_col_stride * OutTileSz;
+            
+            out_ptr += out_col_stride * OutTileSz;
+            lut_ptr += lut_col_stride * OutTileSz;
         }
         int ntrailing_outputs = noutputs % OutTileSz;
         for (int m = 0; m < ntrailing_outputs; m++) {
