@@ -172,18 +172,18 @@ new_time = max(map(lambda r: min(r.trial_best_sec_times), int8_data)) #type of o
 #% Speed of Python C++ Bindings
 N,D,M = 4096, 64,128 #Python output size doesn't match input size
 n,m=N,M
-ncodebooks=8
+ncodebooks=2
 task=mithral_wrapped.mithral_amm_task_float(N,D,M, ncodebooks, lutconsts)
 #easy debugging
 
-#X= np.stack([np.array([i%16]*(D//2) + [(i%16) for j in range(D//2)]) for i in range(N)])
-#Q= np.stack([np.array([i%16]*(M//2) + [16 + i%16]*(M//2)) for i in range(D)])
+X= np.stack([np.array([i%16]*(D//2) + [(i%16) for j in range(D//2)]) for i in range(N)])
+Q= np.stack([np.array([i%16]*(M//2) + [16 + i%16]*(M//2)) for i in range(D)])
 #X=X.astype(float)/10
 #Q=Q.astype(float)/10
 #X= np.stack([np.array([i%16]*(D)) for i in range(N)])
 #Q= np.stack([np.array([(i%16)/10]*(M//2) + [(i%16)]*(M//2)) for i in range(D)])
-X = task.X
-Q = task.Q
+#X = task.X
+#Q = task.Q
 task.X=X
 task.Q=Q
 
@@ -467,11 +467,13 @@ copy_python_to_amm(est, task.amm)
 task.mithral_encode_only()
 task.lut()
 
+task.amm.zip_bolt_colmajor_only()
 s=timer()
-task.amm.scan_test()
+task.amm.scan_test_zipped()
+#task.amm.scan_test()
 Y_hat=task.amm.out_mat
 e=timer()
-print("c++ (making own codes/luts) or (copied luts/cdoes) using sum", 1-r2_score(Y, Y_hat))
+print("c++ (making own codes & luts, then zipping codes) using sum my debug fn", 1-r2_score(Y, Y_hat))
 print(f"Debug version of Mithral Scan faster than Python by: {old_t/(e-s)}")
 if r2_score(Y, Y_hat) < 0.99:
   plt.title(f"WARN BASIC COPYING BAD 1-R^2: {1-r2_score(Y, Y_hat):.4f}")
@@ -481,7 +483,6 @@ if r2_score(Y, Y_hat) < 0.99:
   plt.show()
 else:
   print("C++ debug scan fn is good")
-
 #%%
 task.amm.out_mat=np.zeros(Y.shape)
 print("Try by zipping")

@@ -78,6 +78,28 @@ void mithral_scan_test(const uint8_t* codes, int n, int ncodebooks, int m,
   }
 }
 
+/* if zipped codes first 
+*/
+void mithral_scan_test_zipped(const uint8_t* codes, int n, int ncodebooks, int m,
+                       float offset, float scale,
+                       const uint8_t* luts, uint16_t* float_dists_out) 
+{ 
+  for (int i = 0; i < m; i++) {
+    const uint8_t* lut = luts + i * ncodebooks * 16;
+    for (int j = 0; j < n; j++) {
+      float dist0 = 0;
+      //float dist1 = 0;
+      for (int code_ix = 0; code_ix < ncodebooks/2; code_ix ++) {
+        auto code_byte = codes[j + code_ix*n];
+        auto code0 = code_byte & 0x0F;
+        auto code1 = (code_byte & 0xF0) >> 4;
+        dist0 += lut[code0 + 16*code_ix];
+        dist0 += lut[code1 + 16*code_ix];
+      }
+      float_dists_out[i*n + j] = ((dist0/scale) + offset);
+    }
+  }
+}
 // ================================================================ encode
 
 void mithral_encode(

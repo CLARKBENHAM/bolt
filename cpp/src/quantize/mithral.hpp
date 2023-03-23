@@ -98,7 +98,11 @@ void mithral_scan_test(const uint8_t* codes, int n, int ncodebooks, int m,
 void mithral_scan_test(const uint8_t* codes, int n, int ncodebooks, int m,
                        float offset, float scale,
                        const uint8_t* luts, uint8_t* float_dists_out);
-
+// How Mithral called
+void mithral_scan_test_zipped(const uint8_t* codes, int n, int ncodebooks, int m,
+                       float offset, float scale,
+                       const uint8_t* luts, uint16_t* float_dists_out);
+                       
 // ------------------------ wrapper
 
 template<class InputT> struct mithral_input_type_traits {};
@@ -199,7 +203,11 @@ struct mithral_amm {
                     (const uint8_t*)luts.data(), out_mat.data());
         
     }
-
+    void scan_test_zipped () {
+        mithral_scan_test_zipped((const uint8_t*)codes.data(), N, ncodebooks,  M,
+                    out_offset_sum, out_scale,
+                    (const uint8_t*)luts.data(), out_mat.data());
+    }
     //size params
     const int nsplits_per_codebook;
     const int total_nsplits;
