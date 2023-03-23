@@ -83,13 +83,21 @@ void mithral_lut_sparse(const float* Q, int nrows, int ncols, int ncodebooks,
 
 // ------------------------ scan
 
+//have to make the copy since mithral_scan_chunk in anon namespace
 void mithral_scan(const uint8_t* codes, int64_t nblocks, int ncodebooks,
                   int noutputs, const uint8_t* luts, uint8_t* dists_out);
+
+void mithral_scan(const uint8_t* codes, int64_t nblocks, int ncodebooks,
+                  int noutputs, const uint8_t* luts, uint16_t* dists_out);
 
 //Only for testing codes and luts correct
 void mithral_scan_test(const uint8_t* codes, int n, int ncodebooks, int m,
                        float offset, float scale,
                        const uint8_t* luts, uint16_t* float_dists_out);
+//closer to how mithral called
+void mithral_scan_test(const uint8_t* codes, int n, int ncodebooks, int m,
+                       float offset, float scale,
+                       const uint8_t* luts, uint8_t* float_dists_out);
 
 // ------------------------ wrapper
 
@@ -97,7 +105,7 @@ template<class InputT> struct mithral_input_type_traits {};
 template<> struct mithral_input_type_traits<float> {
     using encoding_scales_type = float;
     using encoding_offsets_type = float;
-    using output_type = uint16_t;
+    using output_type = uint16_t; 
 };
 template<> struct mithral_input_type_traits<int16_t> {
     using encoding_scales_type = uint8_t;
@@ -144,7 +152,7 @@ struct mithral_amm {
     void encode(const InputT* X) {
         // TODO add strides to these funcs so that we can pad number
         // of rows, so scan can rely on nrows being a multiple of 32
-        std::cout << "splitdims: " << splitdims[0] << "\nsplitval: " << splitvals[0] << "\nencode_scales: " << encode_scales[0]  << "\nencodeoffsets: " << encode_offsets[0] << "\n" << std::endl;
+        // std::cout << "splitdims: " << splitdims[0] << "\nsplitval: " << splitvals[0] << "\nencode_scales: " << encode_scales[0]  << "\nencodeoffsets: " << encode_offsets[0] << "\n" << std::endl;
         mithral_encode(
             X, N, D, splitdims, splitvals, encode_scales,
             encode_offsets, ncodebooks, tmp_codes.data());
@@ -181,13 +189,14 @@ struct mithral_amm {
                       luts.data(), out_mat.data());
         #else
             mithral_scan(codes.data(), nblocks, ncodebooks, M,
-                         luts.data(), (uint8_t*)out_mat.data());
+                         luts.data(), out_mat.data()); 
         #endif
     }
+    
     void scan_test() {
         mithral_scan_test((const uint8_t*)codes.data(), N, ncodebooks,  M,
                     out_offset_sum, out_scale,
-                    (const uint8_t*)luts.data(), (output_t*)out_mat.data());
+                    (const uint8_t*)luts.data(), out_mat.data());
         
     }
 
@@ -238,6 +247,21 @@ namespace {
 
 // https://godbolt.org/z/BMx6D7 (also includes zip2_4b_colmajor to compare)
 // inline void zip_bolt_colmajor_v2(const uint8_t* codes_in, int64_t nrows,
+// # Kind of matches, but this fails for ncodebooks > 2
+// c=np.copy(task.amm.codes)
+// out=np.copy(c)
+// task.amm.zip_bolt_colmajor_only()
+// for i in range(ncodebooks//2):
+//   x=np.bitwise_or(c[:,2*i], 16*c[:,2*i+1])%256
+//   out[:,2*i]=x
+// assert(np.all(out==task.amm.codes))
+//
+// # Seperately for ncodebooks=8 and random X/Q below passes.
+// # There might be a bug here since not enough entries are changed for >2 codebooks?
+// c=np.copy(task.amm.codes)
+// task.amm.zip_bolt_colmajor_only()
+// assert(np.all(c[:,3:]==task.amm.codes[:,3:]))
+// assert(np.all(c[2144:,:]==task.amm.codes[2144:,:]))
 template<int NReadColsAtOnce=2>
 inline void zip_bolt_colmajor(const uint8_t* codes_in, int64_t nrows,
                               uint32_t ncodebooks, uint8_t* codes_out)
@@ -1189,9 +1213,9 @@ void mithral_scan_notile(const uint8_t* codes, int64_t nblocks,
 }
 
 template<int NBytes, int UpcastEvery=16, int _OutTileSz=1,
-         bool Force16BitOutput=false>
+         bool Force16BitOutput=false, typename OutType=uint8_t>
 void mithral_scan(const uint8_t* codes, int64_t nblocks,
-                  const uint8_t* luts, uint8_t* dists_out)
+                  const uint8_t* luts, OutType* dists_out)
 {
     static_assert(NBytes > 0, "Code length <= 0 is not valid");
     static_assert(UpcastEvery % 2 == 0, "UpcastEvery must be even");
@@ -1209,14 +1233,13 @@ void mithral_scan(const uint8_t* codes, int64_t nblocks,
     static_assert(colgroup_sz <= ncodebooks, "WTF, did some math wrong");
     static_assert(ncols % colgroup_sz == 0,
         "Size of column group must evenly number of columns");
-    static constexpr bool use_uint8_output =
-        ncolgroups == 1 && !Force16BitOutput;
+    static constexpr bool use_uint8_output = std::is_same<OutType, uint8_t>::value && ncolgroups == 1 && !Force16BitOutput;
     static constexpr int OutTileSz = _OutTileSz > 0 ? _OutTileSz : 1;
 
     int64_t out_stride = use_uint8_output ? nblocks * 32 : 2 * nblocks * 32;
     int lut_stride = ncodebooks * 16;
 
-    uint8_t* out_ptrs[OutTileSz];
+    OutType* out_ptrs[OutTileSz];
     for (int mm = 0; mm < OutTileSz; mm++) {
         out_ptrs[mm] = dists_out + (mm * out_stride);
     }
@@ -1271,16 +1294,17 @@ void mithral_scan(const uint8_t* codes, int64_t nblocks,
             for (int gg = 0; gg < colgroup_sz; gg++) {
                 auto j = (g * colgroup_sz) + gg;
 
-                auto x_col = load_si256i(codes);
+                auto x_col = load_si256i(codes); //have 256/4=64 entries in x_col, each int represents 2 centroid_ix or'd and shifted
                 codes += 32;
                 auto x_low = _mm256_and_si256(x_col, low_4bits_mask);
-                auto x_shft = _mm256_srli_epi16(x_col, 4);
+                auto x_shft = _mm256_srli_epi16(x_col, 4); //x_shft is good: print([i&15 for i in [] ])
                 auto x_high = _mm256_and_si256(x_shft, low_4bits_mask);
 
                 for (int mm = 0; mm < OutTileSz; mm++) {
-                    auto lut_low = lut_arrays[2 * j][mm];
+                    auto lut_low = lut_arrays[2 * j][mm]; //luts are 16B each, 16 in total?
                     auto lut_high = lut_arrays[2 * j + 1][mm];
-
+                    
+                    //Matches: np.ravel(task.amm.luts, order='c')[np.ravel(task.amm.codes, order='f')[:32]]
                     auto dists_low = _mm256_shuffle_epi8(lut_low, x_low);
                     auto dists_high = _mm256_shuffle_epi8(lut_high, x_high);
 
@@ -1390,9 +1414,9 @@ void mithral_scan_notile(const uint8_t* codes, int64_t nblocks, int ncodebooks,
     }
 }
 
-template<int UpcastEvery=64, int OutTileSz=1>
-void mithral_scan(const uint8_t* codes, int64_t nblocks, int ncodebooks,
-             const uint8_t* luts, uint8_t* out)
+template<int UpcastEvery=64, int OutTileSz=1, typename OutType=uint8_t>
+void mithral_scan_T(const uint8_t* codes, int64_t nblocks, int ncodebooks,
+             const uint8_t* luts, OutType* out)
 {
     switch(ncodebooks) {
         case 2: mithral_scan<1, UpcastEvery, OutTileSz>(
@@ -1433,10 +1457,10 @@ void mithral_scan_nochunk(const uint8_t* codes, int64_t nblocks, int ncodebooks,
     }
 }
 
-template<int UpcastEvery=128, int _OutTileSz=2>
+template<int UpcastEvery=128, int _OutTileSz=2, typename OutType=uint8_t> //OutType should be uint8 or uint16
 // void mithral_scan_tiled(const uint8_t* codes, int64_t nblocks, int ncodebooks,
-void mithral_scan(const uint8_t* codes, int64_t nblocks, int ncodebooks,
-                  int noutputs, const uint8_t* luts, uint8_t* dists_out)
+void mithral_scan_chunk(const uint8_t* codes, int64_t nblocks, int ncodebooks,
+                  int noutputs, const uint8_t* luts, OutType* dists_out)
 {
     static constexpr int OutTileSz = _OutTileSz > 0 ? _OutTileSz : 1;
     static constexpr int block_nrows = 32;
@@ -1464,10 +1488,10 @@ void mithral_scan(const uint8_t* codes, int64_t nblocks, int ncodebooks,
             auto nblocks_done = chunk * chunk_nblocks;
             use_nblocks = nblocks - nblocks_done;
         }
-        auto codes_ptr = codes + (chunk * codes_chunk_stride);
-        auto out_ptr = dists_out + (chunk * out_chunk_stride);
+        const uint8_t* codes_ptr = codes + (chunk * codes_chunk_stride);
+        OutType* out_ptr = dists_out + (chunk * out_chunk_stride);
         // -exec p/d *(uint8_t *)&luts[0]@128
-        auto lut_ptr = luts + (chunk * lut_chunk_stride);
+        const uint8_t* lut_ptr = luts + (chunk * lut_chunk_stride);
 
         // if (ncodebooks <= 4) {
         //     // static constexpr int OutTileSzBigger = OutTileSz * 2;
@@ -1505,14 +1529,19 @@ void mithral_scan(const uint8_t* codes, int64_t nblocks, int ncodebooks,
 
         int nfullgroups_out = noutputs / OutTileSz;
         for (int g = 0; g < nfullgroups_out; g++) {
-            mithral_scan<UpcastEvery, OutTileSz>(
-                codes_ptr, use_nblocks, ncodebooks, lut_ptr, out_ptr);
-            out_ptr += out_col_stride * OutTileSz;
-            lut_ptr += lut_col_stride * OutTileSz;
+            mithral_scan_T<UpcastEvery, OutTileSz, OutType>(
+               codes_ptr, use_nblocks, ncodebooks, lut_ptr, out_ptr);
+
+            //  // This actually works
+            //mithral_scan_test(codes_ptr, 4096, ncodebooks, 2,
+            //           0, 0.0156,
+            //           lut_ptr, out_ptr);
+            //out_ptr += out_col_stride * OutTileSz;
+            //lut_ptr += lut_col_stride * OutTileSz;
         }
         int ntrailing_outputs = noutputs % OutTileSz;
         for (int m = 0; m < ntrailing_outputs; m++) {
-            mithral_scan<UpcastEvery, 1>(
+            mithral_scan_T<UpcastEvery, 1, OutType>(
                 codes_ptr, use_nblocks, ncodebooks, lut_ptr, out_ptr);
             out_ptr += out_col_stride * OutTileSz;
             lut_ptr += lut_col_stride * OutTileSz;

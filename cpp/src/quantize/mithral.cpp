@@ -48,12 +48,32 @@ void mithral_scan_test(const uint8_t* codes, int n, int ncodebooks, int m,
       float dist = 0;
       //codes is col matrix
       for (int code_ix = 0; code_ix < ncodebooks; code_ix ++) {
-        dist += lut[codes[j + code_ix*n]];
+        dist += lut[codes[j + code_ix*n] + 16*code_ix]; //Think it's good for ncodebooks
       }
       //How Py does it in a row matrix
       ///float_dists_out[i + j * m] = ((dist / scale) + offset);
       //but c is col matrix 
       float_dists_out[i*n + j] = ((dist / scale) + offset);
+    }
+  }
+}
+
+void mithral_scan_test(const uint8_t* codes, int n, int ncodebooks, int m,
+                       float offset, float scale,
+                       const uint8_t* luts, uint8_t* float_dists_out) 
+{ 
+  for (int i = 0; i < m; i++) {
+    const uint8_t* lut = luts + i * ncodebooks * 16;
+    for (int j = 0; j < n; j++) {
+      float dist = 0;
+      //codes is col matrix
+      for (int code_ix = 0; code_ix < ncodebooks; code_ix ++) {
+        dist += lut[codes[j + code_ix*n] + 16*code_ix]; //Think it's good for ncodebooks
+      }
+      //How Py does it in a row matrix
+      ///float_dists_out[i + j * m] = ((dist / scale) + offset);
+      //but c is col matrix 
+      float_dists_out[i*n + j] = dist;
     }
   }
 }
@@ -96,13 +116,10 @@ void mithral_encode(
         // compute input and output column starts
         auto out_ptr = out + (out_col_stride * c);
        
-        volatile auto scales2 = scales;
-        volatile auto offsets2 = offsets;
-
         for (int s = 0; s < nsplits_per_codebook; s++) {
             auto splitdim = splitdims[split_idx + s];
             x_ptrs[s] = X + (x_col_stride * splitdim);
-            volatile auto splitvals_ptr = all_splitvals + (vals_per_split * c);//What I'd expect, unless there's a reason to read from different memory each time(?) 
+            auto splitvals_ptr = all_splitvals + (vals_per_split * c);//What I'd expect, unless there's a reason to read from different memory each time(?) 
             //auto splitvals_ptr = all_splitvals + (vals_per_split * split_idx); //shift by 16*4 entries per ncodebook
             //-exec p/d *(int8_t *)&current_vsplitval_luts[0]@64
             current_vsplitval_luts[s] = _mm256_broadcastsi128_si256(
@@ -115,36 +132,35 @@ void mithral_encode(
                 //So after each codebook you load the same [64g, 64unused, 64g, 64unused] for each split, then shift the 64 for next codebook
                 // Codes take values 0-8 for selecting values in splitvals_luts each 8 bits, so 
                 // [0-8*8, 8*8-128 unused], [128-128+8*8, 128+8*8-256 unused] which lines up
-            current_vscales[s] = _mm256_set1_ps(scales2[split_idx + s]);
-            current_voffsets[s] = _mm256_set1_ps(offsets2[split_idx + s]);
+            current_vscales[s] = _mm256_set1_ps(scales[split_idx + s]);
+            current_voffsets[s] = _mm256_set1_ps(offsets[split_idx + s]);
         }
         split_idx += nsplits_per_codebook;
 
-        std::cout << "GRIB: REMOVE, only for debugging, #pragma" << std::endl; 
         for (int b = 0; b < nblocks; b++) { // for each block. 256 simd is to process 32 rows in parrallel on 1 splitix of 1 code book and return 8bit encodes for each row.
-            // volatile __m256i codes= _mm256_setzero_si256();  //Original Assumed values level changes each time
-            volatile __m256i codes=_mm256_set1_epi8(1); //1x can multiply each time
-            // #pragma unroll // TODO GRIB uncomment
+            // __m256i codes= _mm256_setzero_si256();  //Original Assumed values level changes each time
+            __m256i codes=_mm256_set1_epi8(1); //1 index so can multiply each time
+            #pragma unroll 
             for (int s = 0; s < nsplits_per_codebook; s++) {
                 //used to scale x for current subspace so vpslitval is int8
                 auto vscales = current_vscales[s]; 
                 auto voffsets = current_voffsets[s];
                 // auto voffsets = _mm256_setzero_si256();
-                volatile auto vsplitvals_lut = current_vsplitval_luts[s];
-                volatile auto vsplitvals = _mm256_shuffle_epi8( 
+                auto vsplitvals_lut = current_vsplitval_luts[s];
+                auto vsplitvals = _mm256_shuffle_epi8( 
                         vsplitvals_lut, codes); // codes = group_ids, range 0-15 for selecting centroids and 0-7 for split vals. Each code entry represent 'node' of X row
 
                 auto x_ptr = x_ptrs[s];
                 x_ptrs[s] += block_nrows;
                 // true = signed saturation; better because cmp instructions
                 // exist for epi8 but not epu8
-                volatile auto x_i8= load_4xf32_as_32xepi8_or_epu8<true, !DeferPerm>(
+                auto x_i8= load_4xf32_as_32xepi8_or_epu8<true, !DeferPerm>(
                     // x_ptr, vscales);
                     x_ptr, vscales, voffsets);
                 
-                volatile auto masks = _mm256_cmpgt_epi8(x_i8, vsplitvals); 
+                auto masks = _mm256_cmpgt_epi8(x_i8, vsplitvals); 
                 // map -1 -> 1; 0 stays the same. _mm256_cmpgt_epi8 always returns "all 1s" aka -1
-                volatile auto masks_0_or_1 = _mm256_sign_epi8(masks, masks);
+                auto masks_0_or_1 = _mm256_sign_epi8(masks, masks);
 
 				//Pythons pull from a different group index each time, it's not an index from a flat array
 				//	eg 0 to 0 to to 0 pulls from v1,v2,v3,v4 
@@ -172,8 +188,10 @@ void mithral_encode(
                 codes = _mm256_permutevar8x32_epi32(
                     codes, _mm256_setr_epi32(0,4, 1,5, 2,6, 3,7));
             }
-            __m256i centroids_against_codebook =_mm256_set1_epi8(c*16);  //remove when zip/do for real?
-            codes = _mm256_add_epi8(codes, centroids_against_codebook);
+            //Only used for Python's example
+            //__m256i centroids_against_codebook =_mm256_set1_epi8(c*16);  //remove when zip/do for real
+            //codes = _mm256_add_epi8(codes, centroids_against_codebook);
+
             _mm256_storeu_si256((__m256i*)out_ptr, codes);
             out_ptr += block_nrows;
         }
@@ -511,7 +529,7 @@ void mithral_scan(const uint8_t* codes, int64_t nblocks, int ncodebooks,
                   int noutputs, const uint8_t* luts, uint8_t* dists_out)
 {
     // mithral_scan<128, 2>(codes, nblocks, ncodebooks, noutputs, luts, dists_out);
-    mithral_scan<16, 2>(codes, nblocks, ncodebooks, noutputs, luts, dists_out);
+    mithral_scan_chunk<16, 2, uint8_t>(codes, nblocks, ncodebooks, noutputs, luts, dists_out);
     // if (ncodebooks >= 4) {
     //     mithral_scan<128, 2>(codes, nblocks, ncodebooks, noutputs, luts, dists_out);
     // } else {
@@ -519,6 +537,11 @@ void mithral_scan(const uint8_t* codes, int64_t nblocks, int ncodebooks,
     // }
 }
 
+void mithral_scan(const uint8_t* codes, int64_t nblocks, int ncodebooks,
+                  int noutputs, const uint8_t* luts, uint16_t* dists_out)
+{
+    mithral_scan_chunk<16, 2, uint16_t>(codes, nblocks, ncodebooks, noutputs, luts, dists_out);
+}
 // void mithral_scan_notile(const uint8_t* codes, int64_t nblocks, int ncodebooks,
 // // void mithral_scan(const uint8_t* codes, int64_t nblocks, int ncodebooks,
 //                   int noutputs, const uint8_t* luts, uint8_t* dists_out)

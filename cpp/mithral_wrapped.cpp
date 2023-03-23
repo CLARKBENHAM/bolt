@@ -210,7 +210,7 @@ PYBIND11_MODULE(mithral_wrapped, m) {
             //The first 8 nums were wrong once(?!)
             self.centroids =const_cast<const float*>(mf.data()); 
         })
-        //WARN: doesn't work yet. How to project from 3d to 2d/1d need for C++?
+        //WARN: Modification is done on C++; raw copying centroids doesn't work yet. How to project from 3d to 2d/1d need for C++?
         .def("setCentroidsCopyData", [](mithral_amm<float> &self , py::array_t<float, py::array::c_style> mf) {
             //py::array_t<float> *t=new py::array_t<float>(mf);
          
@@ -328,7 +328,18 @@ PYBIND11_MODULE(mithral_wrapped, m) {
         // outputs
         .def_readwrite("out_offset_sum"      , &mithral_amm<float>::out_offset_sum)
         .def_readwrite("out_scale"           , &mithral_amm<float>::out_scale)
-        .def_readonly("out_mat"             , &mithral_amm<float>::out_mat) //eigen object
+        .def_readwrite("out_mat"             , &mithral_amm<float>::out_mat) //eigen object
+        .def("getOutUint8", [](mithral_amm<float> &self) { 
+            //Mithral by default writes uint8; not 16int we expect
+            //Eigen::Map<Eigen::Matrix<uint16_t,-1,-1, Eigen::RowMajor>> mf(const_cast<uint8_t*>(self.out_mat.data()), self.out_mat.rows()/2, self.out_mat.cols());
+            
+            Eigen::Map<Eigen::Matrix<uint8_t,-1,-1,Eigen::ColMajor>> modified_rows(reinterpret_cast<uint8_t*>(self.out_mat.data()), self.out_mat.rows(), self.out_mat.cols());
+            //casts to int16? Or just smushes up again?
+            //Eigen::Map<Eigen::Matrix<uint16_t,-1,-1,Eigen::ColMajor>> mf(reinterpret_cast<uint16_t*>(modified_rows.data()), self.out_mat.rows(), self.out_mat.cols());
+            
+            Eigen::Matrix<uint16_t,-1,-1,Eigen::ColMajor> mf = modified_rows.cast<uint16_t>();
+            return mf; 
+        })
         ;
 
     ////Eigen type so can return real matrix
