@@ -22,7 +22,7 @@ int add(int i, int j) {
     ColMatrix<output_t> out_mat;
 */
 
-void mithral_scan_test(const uint8_t* codes, int n, int ncodebooks, int m,
+void mithral_scan_test(const uint8_t* codes, int N, int ncodebooks, int M,
                        float offset, float scale,
                        const uint8_t* luts, uint16_t* float_dists_out) 
 { 
@@ -42,38 +42,38 @@ void mithral_scan_test(const uint8_t* codes, int n, int ncodebooks, int m,
     [ 0  1  3  4  6  7  9 10 12 13 15 16 18 19 21 22  0  1  3  4  6  7  9 10]
     [120 135 150 165 180 195 210 225   0  15  30  45  60  75  90 105 120 135 150 165 180 195 210 225]
     */
-  for (int i = 0; i < m; i++) {
+  for (int i = 0; i < M; i++) {
     const uint8_t* lut = luts + i * ncodebooks * 16;
-    for (int j = 0; j < n; j++) {
+    for (int j = 0; j < N; j++) {
       float dist = 0;
       //codes is col matrix
       for (int code_ix = 0; code_ix < ncodebooks; code_ix ++) {
-        dist += lut[codes[j + code_ix*n] + 16*code_ix]; //Think it's good for ncodebooks
+        dist += lut[codes[j + code_ix*N] + 16*code_ix]; //Think it's good for ncodebooks
       }
       //How Py does it in a row matrix
       ///float_dists_out[i + j * m] = ((dist / scale) + offset);
       //but c is col matrix 
-      float_dists_out[i*n + j] = ((dist / scale) + offset);
+      float_dists_out[i*N + j] = ((dist / scale) + offset);
     }
   }
 }
 
-void mithral_scan_test(const uint8_t* codes, int n, int ncodebooks, int m,
+void mithral_scan_test(const uint8_t* codes, int N, int ncodebooks, int M,
                        float offset, float scale,
                        const uint8_t* luts, uint8_t* float_dists_out) 
 { 
-  for (int i = 0; i < m; i++) {
+  for (int i = 0; i < M; i++) {
     const uint8_t* lut = luts + i * ncodebooks * 16;
-    for (int j = 0; j < n; j++) {
+    for (int j = 0; j < N; j++) {
       float dist = 0;
       //codes is col matrix
       for (int code_ix = 0; code_ix < ncodebooks; code_ix ++) {
-        dist += lut[codes[j + code_ix*n] + 16*code_ix]; //Think it's good for ncodebooks
+        dist += lut[codes[j + code_ix*N] + 16*code_ix]; //Think it's good for ncodebooks
       }
       //How Py does it in a row matrix
       ///float_dists_out[i + j * m] = ((dist / scale) + offset);
       //but c is col matrix 
-      float_dists_out[i*n + j] = dist;
+      float_dists_out[i*N + j] = dist;
     }
   }
 }
@@ -87,16 +87,15 @@ void mithral_scan_test_zipped(const uint8_t* codes, int n, int ncodebooks, int m
   for (int i = 0; i < m; i++) {
     const uint8_t* lut = luts + i * ncodebooks * 16;
     for (int j = 0; j < n; j++) {
-      float dist0 = 0;
-      //float dist1 = 0;
+      float dist = 0;
       for (int code_ix = 0; code_ix < ncodebooks/2; code_ix ++) {
         auto code_byte = codes[j + code_ix*n];
         auto code0 = code_byte & 0x0F;
         auto code1 = (code_byte & 0xF0) >> 4;
-        dist0 += lut[code0 + 16*code_ix];
-        dist0 += lut[code1 + 16*code_ix];
+        dist += lut[code0 + 16*code_ix];
+        dist += lut[code1 + 16*code_ix];
       }
-      float_dists_out[i*n + j] = ((dist0/scale) + offset);
+      float_dists_out[i*n + j] = ((dist/scale) + offset);
     }
   }
 }

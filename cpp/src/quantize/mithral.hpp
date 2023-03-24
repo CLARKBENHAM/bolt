@@ -102,7 +102,6 @@ void mithral_scan_test(const uint8_t* codes, int n, int ncodebooks, int m,
 void mithral_scan_test_zipped(const uint8_t* codes, int n, int ncodebooks, int m,
                        float offset, float scale,
                        const uint8_t* luts, uint16_t* float_dists_out);
-                       
 // ------------------------ wrapper
 
 template<class InputT> struct mithral_input_type_traits {};
@@ -1216,14 +1215,15 @@ void mithral_scan(const uint8_t* codes, int64_t nblocks,
     static constexpr int colgroup_sz = actually_upcast_every / 2;
     static_assert(is_power_of_2(colgroup_sz),
         "Invalid number of columns to unroll at once");
-    static constexpr int ncolgroups = ncols / colgroup_sz;
+    static constexpr int ncolgroups = ncols / colgroup_sz; //=ncols * 2 /ncodebooks; why depends on codebook size?
     static_assert(colgroup_sz <= ncodebooks, "WTF, did some math wrong");
     static_assert(ncols % colgroup_sz == 0,
         "Size of column group must evenly number of columns");
     static constexpr bool use_uint8_output = std::is_same<OutType, uint8_t>::value && ncolgroups == 1 && !Force16BitOutput;
     static constexpr int OutTileSz = _OutTileSz > 0 ? _OutTileSz : 1;
 
-    int64_t out_stride = use_uint8_output ? nblocks * 32 : 2 * nblocks * 32;
+    //int64_t out_stride = use_uint8_output ? nblocks * 32 : 2 * nblocks * 32; //int16 output should keep stride outputs the same
+    int64_t out_stride = nblocks * 32; //int16 vs int8 dists_out still inc ix by same amount
     int lut_stride = ncodebooks * 16;
 
     OutType* out_ptrs[OutTileSz];
@@ -1364,10 +1364,11 @@ void mithral_scan(const uint8_t* codes, int64_t nblocks,
                     _mm256_stream_si256((__m256i*)out_ptrs[mm], group_avg);
                     out_ptrs[mm] += 32;
                 } else {
-                    auto avgs_0_15 = _mm256_cvtepi8_epi16(
-                        _mm256_extracti128_si256(group_avg, 0));
-                    auto avgs_16_31 = _mm256_cvtepi8_epi16(
+                    auto avgs_0_15 = _mm256_cvtepu8_epi16( //used to cast i8s to i16s. No u8 to u16 instruction
+                         _mm256_extracti128_si256(group_avg, 0));
+                    auto avgs_16_31 = _mm256_cvtepu8_epi16(
                         _mm256_extracti128_si256(group_avg, 1));
+                    //i16 addition is equivalent to u16 addition, as long as we don't do any conversions
                     totals_0_15[mm] = _mm256_add_epi16(totals_0_15[mm], avgs_0_15);
                     totals_16_31[mm] = _mm256_add_epi16(totals_16_31[mm], avgs_16_31);
                 }
@@ -1378,8 +1379,8 @@ void mithral_scan(const uint8_t* codes, int64_t nblocks,
                 _mm256_stream_si256(
                     (__m256i*)(out_ptrs[mm] + 0), totals_0_15[mm]);
                 _mm256_stream_si256(
-                    (__m256i*)(out_ptrs[mm] + 32), totals_16_31[mm]);
-                out_ptrs[mm] += 64;
+                    (__m256i*)(out_ptrs[mm] + 16), totals_16_31[mm]);
+                out_ptrs[mm] += 32; //changed from 32/64 to 16/32 for int16 outputs
             }
         }
     }
@@ -1518,11 +1519,11 @@ void mithral_scan_in_chunks(const uint8_t* codes, int64_t nblocks, int ncodebook
         for (int g = 0; g < nfullgroups_out; g++) {
             mithral_scan_T<UpcastEvery, OutTileSz, OutType>(
                codes_ptr, use_nblocks, ncodebooks, lut_ptr, out_ptr);
-
-            //// This actually works if don't zip_col
-            //mithral_scan_test(codes_ptr, 4096, ncodebooks, 2,
-            //           0, 0.0156,
-            //           lut_ptr, out_ptr);
+            
+            //// works with zipped values
+            //mithral_scan_test_zipped(codes_ptr, 4096, ncodebooks, 2,
+            //       0, 0.0156,
+            //       lut_ptr, reinterpret_cast<uint16_t*>(out_ptr));
             
             out_ptr += out_col_stride * OutTileSz;
             lut_ptr += lut_col_stride * OutTileSz;
