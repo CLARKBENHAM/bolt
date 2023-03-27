@@ -101,6 +101,7 @@ void mithral_scan_test_zipped(const uint8_t* codes, int n, int ncodebooks, int m
 }
 // ================================================================ encode
 
+//The one that works
 void mithral_encode(
     const float* X, int64_t nrows, int ncols,
     const uint32_t* splitdims, const int8_t* all_splitvals,
@@ -220,6 +221,7 @@ void mithral_encode(
     
 }
 
+//not fixed
 // version with int16 data
 void mithral_encode(const int16_t* X, int64_t nrows, int ncols,
     const uint32_t* splitdims, const int8_t* all_splitvals,
@@ -304,6 +306,7 @@ void mithral_encode(const int16_t* X, int64_t nrows, int ncols,
     }
 }
 
+//not fixed
 // version with int8 data
 void mithral_encode(const int8_t* X, int64_t nrows, int ncols,
     const uint32_t* splitdims, const int8_t* all_splitvals,

@@ -1201,7 +1201,7 @@ void mithral_scan_notile(const uint8_t* codes, int64_t nblocks,
 template<int NBytes, int UpcastEvery=16, int _OutTileSz=1,
          bool Force16BitOutput=false, typename OutType=uint8_t>
 void mithral_scan(const uint8_t* codes, int64_t nblocks,
-                  const uint8_t* luts, OutType* dists_out)
+                  const uint8_t* luts, OutType* dists_out, int64_t N=-1)
 {
     static_assert(NBytes > 0, "Code length <= 0 is not valid");
     static_assert(UpcastEvery % 2 == 0, "UpcastEvery must be even");
@@ -1211,7 +1211,7 @@ void mithral_scan(const uint8_t* codes, int64_t nblocks,
         "UpcastEvery must be a power of 2!");
     static constexpr int ncodebooks = 2 * NBytes;
     static constexpr int ncols = NBytes;
-    static constexpr int actually_upcast_every = MIN(UpcastEvery, ncodebooks);
+    static constexpr int actually_upcast_every = MIN(MIN(UpcastEvery, ncodebooks), 128*2); //128 is largest can handle in averaging for colgroup_sz
     static constexpr int colgroup_sz = actually_upcast_every / 2;
     static_assert(is_power_of_2(colgroup_sz),
         "Invalid number of columns to unroll at once");
@@ -1222,8 +1222,9 @@ void mithral_scan(const uint8_t* codes, int64_t nblocks,
     static constexpr bool use_uint8_output = std::is_same<OutType, uint8_t>::value && ncolgroups == 1 && !Force16BitOutput;
     static constexpr int OutTileSz = _OutTileSz > 0 ? _OutTileSz : 1;
 
+    //out_stride should always equal N since colmajor matrix? Won't always for last chunk of blocks from mithral_scan_in_chunks
     //int64_t out_stride = use_uint8_output ? nblocks * 32 : 2 * nblocks * 32; //int16 output should keep stride outputs the same
-    int64_t out_stride = nblocks * 32; //int16 vs int8 dists_out still inc ix by same amount
+    int64_t out_stride = N > 0 ? N : nblocks * 32; //int16 vs int8 dists_out still inc ix by same amount
     int lut_stride = ncodebooks * 16;
 
     OutType* out_ptrs[OutTileSz];
@@ -1404,23 +1405,23 @@ void mithral_scan_notile(const uint8_t* codes, int64_t nblocks, int ncodebooks,
 
 template<int UpcastEvery=64, int OutTileSz=1, typename OutType=uint8_t>
 void mithral_scan_T(const uint8_t* codes, int64_t nblocks, int ncodebooks,
-             const uint8_t* luts, OutType* out)
+             const uint8_t* luts, OutType* out, int64_t N=-1)
 {
     switch(ncodebooks) {
-        case 2: mithral_scan<1, UpcastEvery, OutTileSz>(
-            codes, nblocks, luts, out); break;
-        case 4: mithral_scan<2, UpcastEvery, OutTileSz>(
-            codes, nblocks, luts, out); break;
-        case 8: mithral_scan<4, UpcastEvery, OutTileSz>(
-            codes, nblocks, luts, out); break;
-        case 16: mithral_scan<8, UpcastEvery, OutTileSz>(
-            codes, nblocks, luts, out); break;
+        case 2: mithral_scan<1,   UpcastEvery, OutTileSz>(
+            codes, nblocks, luts, out, N); break;
+        case 4: mithral_scan<2,   UpcastEvery, OutTileSz>(
+            codes, nblocks, luts, out, N); break;
+        case 8: mithral_scan<4,   UpcastEvery, OutTileSz>(
+            codes, nblocks, luts, out, N); break;
+        case 16: mithral_scan<8,  UpcastEvery, OutTileSz>(
+            codes, nblocks, luts, out, N); break;
         case 32: mithral_scan<16, UpcastEvery, OutTileSz>(
-            codes, nblocks, luts, out); break;
+            codes, nblocks, luts, out, N); break;
         case 64: mithral_scan<32, UpcastEvery, OutTileSz>(
-            codes, nblocks, luts, out); break;
+            codes, nblocks, luts, out, N); break;
         case 128: mithral_scan<64, UpcastEvery, OutTileSz>(
-            codes, nblocks, luts, out); break;
+            codes, nblocks, luts, out, N); break;
         default: assert(false);  // unsupported ncodebooks
     }
 }
@@ -1445,8 +1446,10 @@ void mithral_scan_nochunk(const uint8_t* codes, int64_t nblocks, int ncodebooks,
     }
 }
 
+// We chunk the code and output rows, we iterate over all luts in loop here.
+// Since the full codebooks are in colorder, each encoded X row is stored in row order.
+// Take row i of codes, row j of luts and can write out[i,j] 
 template<int UpcastEvery=128, int _OutTileSz=2, typename OutType=uint8_t> //OutType should be uint8 or uint16
-// void mithral_scan_tiled(const uint8_t* codes, int64_t nblocks, int ncodebooks,
 void mithral_scan_in_chunks(const uint8_t* codes, int64_t nblocks, int ncodebooks,
                   int noutputs, const uint8_t* luts, OutType* dists_out)
 {
@@ -1466,11 +1469,11 @@ void mithral_scan_in_chunks(const uint8_t* codes, int64_t nblocks, int ncodebook
     auto codes_chunk_stride = codes_row_stride * chunk_nrows;
     auto out_chunk_stride = chunk_nrows;
     auto out_col_stride = nblocks * block_nrows;
-    auto lut_chunk_stride = 0;
+    auto lut_chunk_stride = 0; //since we already loop over all luts
     auto lut_col_stride = ncodebooks * lut_sz;
 
     auto nchunks = (nblocks + chunk_nblocks - 1) / chunk_nblocks;
-    for (int chunk = 0; chunk < nchunks; chunk++) { // for each chunk of input rows
+    for (int chunk = 0; chunk < nchunks; chunk++) { // for each chunk of codes/output rows to write 
         int64_t use_nblocks = chunk_nblocks;
         if (chunk == (nchunks - 1)) { // handle last chunk
             auto nblocks_done = chunk * chunk_nblocks;
@@ -1478,90 +1481,30 @@ void mithral_scan_in_chunks(const uint8_t* codes, int64_t nblocks, int ncodebook
         }
         const uint8_t* codes_ptr = codes + (chunk * codes_chunk_stride);
         OutType* out_ptr = dists_out + (chunk * out_chunk_stride);
-        // -exec p/d *(uint8_t *)&luts[0]@128
         const uint8_t* lut_ptr = luts + (chunk * lut_chunk_stride);
-
-        // if (ncodebooks <= 4) {
-        //     // static constexpr int OutTileSzBigger = OutTileSz * 2;
-        //     static constexpr int OutTileSzBigger = OutTileSz + 1;
-        //     int nfullgroups_out = noutputs / OutTileSzBigger;
-        //     for (int g = 0; g < nfullgroups_out; g++) {
-        //         mithral_scan<UpcastEvery, OutTileSzBigger>(
-        //             codes_ptr, use_nblocks, ncodebooks, lut_ptr, out_ptr);
-        //         out_ptr += out_col_stride * OutTileSz;
-        //         lut_ptr += lut_col_stride * OutTileSz;
-        //     }
-        //     int ntrailing_outputs = noutputs % OutTileSzBigger;
-        //     for (int m = 0; m < ntrailing_outputs; m++) {
-        //         mithral_scan<UpcastEvery, 1>(
-        //             codes_ptr, use_nblocks, ncodebooks, lut_ptr, out_ptr);
-        //         out_ptr += out_col_stride * OutTileSz;
-        //         lut_ptr += lut_col_stride * OutTileSz;
-        //     }
-        // } else {
-        //     int nfullgroups_out = noutputs / OutTileSz;
-        //     for (int g = 0; g < nfullgroups_out; g++) {
-        //         mithral_scan<UpcastEvery, OutTileSz>(
-        //             codes_ptr, use_nblocks, ncodebooks, lut_ptr, out_ptr);
-        //         out_ptr += out_col_stride * OutTileSz;
-        //         lut_ptr += lut_col_stride * OutTileSz;
-        //     }
-        //     int ntrailing_outputs = noutputs % OutTileSz;
-        //     for (int m = 0; m < ntrailing_outputs; m++) {
-        //         mithral_scan<UpcastEvery, 1>(
-        //             codes_ptr, use_nblocks, ncodebooks, lut_ptr, out_ptr);
-        //         out_ptr += out_col_stride * OutTileSz;
-        //         lut_ptr += lut_col_stride * OutTileSz;
-        //     }
-        // }
 
         int nfullgroups_out = noutputs / OutTileSz;
         for (int g = 0; g < nfullgroups_out; g++) {
             mithral_scan_T<UpcastEvery, OutTileSz, OutType>(
-               codes_ptr, use_nblocks, ncodebooks, lut_ptr, out_ptr);
+               codes_ptr, use_nblocks, ncodebooks, lut_ptr, out_ptr, nblocks*block_nrows);
             
-            //// works with zipped values
-            //mithral_scan_test_zipped(codes_ptr, 4096, ncodebooks, 2,
+            ////works with zipped values
+            //auto n = 4096; //should be learned
+            //mithral_scan_test_zipped(codes_ptr, n, ncodebooks, 2,
             //       0, 0.0156,
             //       lut_ptr, reinterpret_cast<uint16_t*>(out_ptr));
-            
+    
+            //We're iterating over columns of output, and rows of Luts
             out_ptr += out_col_stride * OutTileSz;
             lut_ptr += lut_col_stride * OutTileSz;
         }
         int ntrailing_outputs = noutputs % OutTileSz;
         for (int m = 0; m < ntrailing_outputs; m++) {
             mithral_scan_T<UpcastEvery, 1, OutType>(
-                codes_ptr, use_nblocks, ncodebooks, lut_ptr, out_ptr);
+                codes_ptr, use_nblocks, ncodebooks, lut_ptr, out_ptr, nblocks*block_nrows);
             out_ptr += out_col_stride * OutTileSz;
             lut_ptr += lut_col_stride * OutTileSz;
         }
-
-
-        // if (OutTileSz > 0) {
-        //     int nfullgroups_out = noutputs / OutTileSz;
-        //     for (int g = 0; g < nfullgroups_out; g++) {
-        //         mithral_scan<UpcastEvery, OutTileSz>(
-        //             codes_ptr, use_nblocks, ncodebooks, lut_ptr, out_ptr);
-        //         out_ptr += out_col_stride * OutTileSz;
-        //         lut_ptr += lut_col_stride * OutTileSz;
-        //     }
-        //     int ntrailing_outputs = noutputs % OutTileSz;
-        //     for (int m = 0; m < ntrailing_outputs; m++) {
-        //         mithral_scan<UpcastEvery, 1>(
-        //             codes_ptr, use_nblocks, ncodebooks, lut_ptr, out_ptr);
-        //         out_ptr += out_col_stride * OutTileSz;
-        //         lut_ptr += lut_col_stride * OutTileSz;
-        //     }
-        // } else {
-        //     // TODO just call mithral_scan with OutTileSz=1 and eliminate
-        //     // dup code
-        //     for (int i = 0; i < noutputs; i++) {
-        //         mithral_scan_notile<UpcastEvery>(
-        //             codes_ptr, use_nblocks, ncodebooks, lut_ptr, out_ptr);
-        //         out_ptr += out_col_stride;
-        //         lut_ptr += lut_col_stride;
-        //     }
-        // }
     }
 }
 
