@@ -1916,6 +1916,9 @@ def assignments_from_splits(X, splits):
 
 
 def assignments_from_multisplits(X, splits):
+    """change from preprocess_x to preprocess_x_like_cpp 
+        if you want to copy values from cpp back to python
+    """
     N, _ = X.shape
     nsplits = len(splits)
     # indicators = np.zeros((nsplits, len(X)), dtype=np.int)
@@ -1941,7 +1944,7 @@ def assignments_from_multisplits(X, splits):
         # if split.scaleby is not None:
         #     x = x * split.scaleby
         # indicators = x > vals
-        indicators = split.preprocess_x_like_cpp(X[:, split.dim]) > vals
+        indicators = split.preprocess_x(X[:, split.dim]) > vals
         group_ids = (group_ids * 2) + indicators
 
     if nsplits <= nsplits_affecting_group_id:
@@ -1958,7 +1961,7 @@ def assignments_from_multisplits(X, splits):
         # if split.scaleby is not None:
         #     x = x * split.scaleby
         # indicators = x > vals
-        indicators = split.preprocess_x_like_cpp(X[:, split.dim]) > vals
+        indicators = split.preprocess_x(X[:, split.dim]) > vals
         assignments = (assignments * 2) + indicators
 
     return assignments
