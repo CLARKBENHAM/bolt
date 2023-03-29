@@ -1,0 +1,14 @@
+{
+  "folders": [
+		{
+			"name": "bolt",
+			"path": "."
+		},
+		{
+			"path": "../extension-script"
+		}
+	],
+  "settings": {
+    "cmake.configureOnOpen": false
+  }
+}

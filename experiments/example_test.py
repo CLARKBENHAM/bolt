@@ -170,7 +170,8 @@ new_time = max(map(lambda r: min(r.trial_best_sec_times), int8_data)) #type of o
 #print(f'new (cpp) throughput {new_throughput:.2E} vs Old Throughput: {old_throughput:.2E}')
 
 #% Speed of Python C++ Bindings
-N,D,M = 65536, 64,128 
+#N,D,M = 65536, 64,128 
+N,D,M = 4096, 64,128 
 n,m=N,M
 ncodebooks=2
 task=mithral_wrapped.mithral_amm_task_float(N,D,M, ncodebooks, lutconsts)
@@ -425,7 +426,6 @@ def dists_enc_short(X_enc, Q_luts,
       dists = centroid_dists.reshape(X_enc.shape)
       dists = np.clip(dists, 0, 255).sum(axis=-1)
       dists = (dists / scale) + offset
-      
       all_dists[i] = dists
       if False: #slow
           assert(np.array_equal(dists,
@@ -453,10 +453,7 @@ def dists_enc_cpp(X_enc, Q_luts,
   out = dists_out.reshape(n,m)
   return out
 
-
-
 #Setup Python to be how C++ expects it
-
 if False: #Make it false when debugging
   #tests Do Python the way C++ is done and make sure values are correct
   #Edit clusterize.py:assignments_from_multisplits to use splits.preprocess_x_like_cpp
@@ -466,7 +463,7 @@ if False: #Make it false when debugging
   for code_ix, a in enumerate(est.enc.splits_lists):
     for row_ix, split in enumerate(a):
       split.vals = v[code_ix][2**row_ix:2**(row_ix+1)] #c++ is 1 indexed 
-      split.offset = eo[code_ix][row_ix]
+      split.offset = eo[code_ix][row_ix] 
       
   #These are a little off now, but C++ is still good 
   est.A_enc = est.enc.encode_X(X)
@@ -477,8 +474,8 @@ if False: #Make it false when debugging
   print(py_vars, 'X: ', X, 'Q: ', Q, 'Y: ', Y, 'A_enc: ', est.A_enc, 'Luts: ', est.luts.reshape(est.luts.shape[0],-1), sep='\n')
   est.fit(X,Q) #So est is in good state again by end
 
-Y_hat=dists_enc_cpp(est.A_enc, est.luts, offset=est.offset, scale=est.scale)
-print("cpp mimic in python", 1-r2_score(Y, Y_hat))
+Y_hat_py=dists_enc_cpp(est.A_enc, est.luts, offset=est.offset, scale=est.scale)
+print("cpp mimic in python", 1-r2_score(Y, Y_hat_py))
 copy_python_to_amm(est, task.amm)
 #task.amm.codes=est.A_enc
 #task.amm.luts = est.luts.reshape(est.luts.shape[0],-1)
@@ -514,24 +511,102 @@ print("1-R^2: ",1-r2_score(Y, Y_hat))
 print(f"C++ Wrapped Mithral times faster than Python Matrix Mult: {old_t/(e-s)}")
 
 
-#%% Scrap
+#%%   
+### Scrap ###
+### Scrap ###
+### Scrap ###
+
+
+#Compare C++ and Python give similar Y_hat on random Data
+#(They don't)
+old_x, old_q = map(np.copy, (X,Q))
+for _ in range(10):
+  X=np.random.random_sample(X.shape)
+  Q=np.random.random_sample(Q.shape)
+  Y=X@Q
+  est = vq_amm.MithralMatmul(**hparams_dict) #Have to reset to update codes and luts 
+  est.fit(X,Q)
+  Y_hat_py=est(X,Q)
+  task.X=X
+  task.Q=Q
+  copy_python_to_amm(est, task.amm)
+  #task.run_matmul(True)
+  #Y_hat_cpp=(task.amm.out_mat*ncodebooks/task.amm.out_scale) + task.amm.out_offset_sum
+  
+  task.mithral_encode_only()
+  task.lut()
+  #task.amm.codes=est.A_enc
+  #task.amm.luts = est.luts.reshape(est.luts.shape[0],-1)
+  
+  task.amm.scan_test() #unzipped version
+  Y_hat_cpp=task.amm.out_mat
+  print("Py and C++ R^2", 1-r2_score(Y_hat_py, Y_hat_cpp))
+
+X,Q=old_x,old_q
+est = vq_amm.MithralMatmul(**hparams_dict) #Have to reset to update codes and luts 
+est.fit(X,Q)
+copy_python_to_amm(est, task.amm)
+#%%
+#With random X,Q and copied python params does c++ make the right codes and luts?
+# maybe just a uint8 thing?
+c1s=np.sum(task.amm.codes[:,0]!=est.A_enc[:,0]) 
+c2s=np.sum(task.amm.codes[:,1]+16!=est.A_enc[:,1])
+assert c1s   == 0, c1s #534/65536 different
+assert c2s == 0, c2s #497/65536 different
+       
+copy_python_to_amm(est, task.amm)
+task.mithral_encode_only()
+task.lut()
+task.amm.scan_test() #unzipped version
+Y_hat=task.amm.out_mat
+
+plt.hist(Y_hat_py.flatten(),bins=30,label='Y_hat_py', alpha=0.5)
+plt.hist(Y_hat.flatten(),bins=30,label='Y_hat',alpha=0.5)
+plt.legend()
+
+#%% #Check if match with random codes/luts (C++ overflows?)
+#fails if change luts, but works if change codes
+#Python makes 3 unique values, C++ 5 unique values
+
+task.amm.out_mat =np.zeros(Y.shape)
+#task.amm.codes=np.random.randint(0, high=16, size=task.amm.codes.size).reshape(task.amm.codes.shape).astype(np.uint8)
+#task.amm.luts = 50*np.random.randint(1, high=4, size=task.amm.luts.size).reshape(task.amm.luts.shape).astype(np.uint8)
+l = np.zeros(task.amm.luts.shape)
+l[:,1]=[1]*(M//2) + [9]*(M//2) #np.random.randint(2, size=M)
+l[:,17]=1 # np.random.randint(2, size=M)
+#l[:,0]=[1]*(M//2) + [9]*(M//2) #np.random.randint(2, size=M)
+#l[:,16]=1 # np.random.randint(2, size=M)
+task.amm.luts = l
+task.amm.codes=np.ones(task.amm.codes.shape).astype(np.uint8) 
+#task.amm.luts = np.ones(task.amm.luts.shape).astype(np.uint8) *9
+
+Y_hat_py=dists_enc_cpp(task.amm.codes, task.amm.luts, offset=task.amm.out_offset_sum, scale=task.amm.out_scale)
+task.amm.tmp_codes = task.amm.codes
+task.amm.zip_bolt_colmajor_only()
+task.scan()
+#task.amm.scan_test() #unzipped version
+Y_hat_cpp=(task.output()*ncodebooks/task.amm.out_scale) + task.amm.out_offset_sum #use original mithral scan
+
+plt.hist(Y_hat_cpp.flatten(),bins=30,label='Y_hat_cpp',alpha=0.5)
+plt.hist(Y_hat_py.flatten(),bins=30,label='Y_hat_py', alpha=0.5)
+plt.legend()
+plt.show()
+
+#Why doesn't Python make as many values?
+print(np.sort(np.unique(Y_hat_py[0])))
+print(np.sort(np.unique(Y_hat_cpp[0])))
+print(np.sort(np.unique(task.amm.luts[:,1] + task.amm.luts[:,17]))*ncodebooks/task.amm.out_scale + task.amm.out_offset_sum)
+
+
+#%% C++ works with fixed codes/luts 
 task.amm.out_mat =np.zeros(Y.shape)
 task.amm.codes=np.ones(task.amm.codes.shape).astype(float)
 task.amm.luts = np.ones(task.amm.luts.shape)*9
 task.amm.zip_bolt_colmajor_only()
 task.scan()
-Y_hat=(task.output()*ncodebooks/task.amm.out_scale) + task.amm.out_offset_sum #use original mithral scan
-print(Y_hat)
-
-"""
-  What does UpCast every do?
-    accumulates 
-	What does use_nblocks every do?
-
-  
-  
-  """
-#%%
+Y_hat_cpp=(task.output()*ncodebooks/task.amm.out_scale) + task.amm.out_offset_sum #use original mithral scan
+print(Y_hat_cpp)
+#%% Runs without segfaulting
 Y_hat=est(X,Q)
 copy_python_to_amm(est, task.amm)
 for i in range(99):
