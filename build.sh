@@ -21,8 +21,8 @@ pip install ./third_party/kmc2
 ## pip install --use-feature=in-tree-build -r requirements.txt
 ## pip install --use-feature=in-tree-build ./third_party/kmc2
 ## pip install . # doesn't work due to custom install command
-#python setup.py install
-EIGEN_INCLUDE_DIR=/usr/include/eigen3 python setup.py install
+python setup.py install
+#EIGEN_INCLUDE_DIR=/usr/include/eigen3 python setup.py install
 
 # python tests/test_encoder.py
 #--or--

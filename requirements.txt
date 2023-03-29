@@ -11,3 +11,6 @@ jupyter
 Cython
 invoke
 pybind11
+pyzmq
+ipython
+ipykernel
