@@ -1369,9 +1369,8 @@ void mithral_scan(const uint8_t* codes, int64_t nblocks,
                          _mm256_extracti128_si256(group_avg, 0));
                     auto avgs_16_31 = _mm256_cvtepu8_epi16(
                         _mm256_extracti128_si256(group_avg, 1));
-                    //i16 addition is equivalent to u16 addition, as long as we don't do any conversions
-                    totals_0_15[mm] = _mm256_add_epi16(totals_0_15[mm], avgs_0_15);
-                    totals_16_31[mm] = _mm256_add_epi16(totals_16_31[mm], avgs_16_31);
+                    totals_0_15[mm] = _mm256_adds_epu16(totals_0_15[mm], avgs_0_15);
+                    totals_16_31[mm] = _mm256_adds_epu16(totals_16_31[mm], avgs_16_31);
                 }
             }
         }
