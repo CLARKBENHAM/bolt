@@ -29,8 +29,8 @@ ENV PATH=$PATH:/root/local/miniconda/bin/
 RUN . /activate && \
 	#Change python to 3.7
 	conda install python=3.7 && \
-  conda install  -c pytorch-nightly cpuonly && \
-  conda install  -c pytorch-nightly pytorch  && \
+  	conda install  -c pytorch-nightly cpuonly && \
+  	conda install  -c pytorch-nightly pytorch  && \
 	conda init bash 
 
 # Download LibTorch
@@ -65,17 +65,17 @@ RUN curl -fsSL https://bazel.build/bazel-release.pub.gpg | gpg --dearmor >bazel-
 
 #How to Git clone in Docker?
 #TODO: should be my branch to clone; but then need git creds. For now just using on same volume as repos already exist on
-RUN cd  && git clone https://github.com/pytorch/extension-script.git 
+RUN  git clone https://github.com/pytorch/extension-script.git 
 # RUN git clone https://github.com/dblalock/bolt.git 
 
-#Installed eigen: had to manually build as well as install(?!)
-RUN cd .. \
-	&& curl -L https://gitlab.com/libeigen/eigen/-/archive/3.3.8/eigen-3.3.8.tar > eigen-3.3.8.tar \
-	&& tar -xf eigen-3.3.8.tar \
-	&& mkdir build_dir_eigen \
-	&& cd build_dir_eigen  \
-	&& cmake ../eigen-3.3.8 \
-	&& make install
+ # (Is this actually needed, already apt-installed?)
+ # Untaring eigen-3.3.8 gives bad directory name by default, had to set to eigen-3.3.8
+ RUN 	curl -L https://gitlab.com/libeigen/eigen/-/archive/3.3.8/eigen-3.3.8.tar > eigen-3.3.8.tar \
+ 	&& mkdir eigen-3.3.8 && tar xf eigen-3.3.8.tar  -C eigen-3.3.8 --strip-components 1 \ 
+ 	&& mkdir -p build_dir_eigen \
+	&& cd build_dir_eigen \
+ 	&& cmake ../eigen-3.3.8  \
+ 	&& make install
 
 #Bolt packages
 WORKDIR /home/cbenham/bolt/
@@ -83,21 +83,25 @@ COPY requirements.txt /home/cbenham/bolt/requirements.txt
 RUN conda install --file requirements.txt 
 COPY . /home/cbenham/bolt
 
-#Build Code
-#.bashrc activates conda for packages
-RUN . ~/.bashrc \
-	&& ./build.sh \
-	&& true
-	##last cpp tests are very slow; but did get a seg fault on  Ucr128 f32
-	#&& cd cpp/build-bolt \
-	#&& ./bolt amm* 
+##Build Code with cmake, nessisary? Main code is bad right now
+##.bashrc activates conda for packages
+#RUN . ~/.bashrc \
+#	&& ./build.sh \
+#	&& true
+#	##last cpp tests are very slow; but did get a seg fault on  Ucr128 f32
+#	#&& cd cpp/build-bolt \
+#	#&& ./bolt amm* 
 
-RUN cd cpp && bazel run :main
+RUN . ~/.bashrc && cd cpp && bazel build :mithral_wrapped 
+# && bazel run :main
 
 #install kmc2 
 RUN cd .. \
 	&& git clone -b mneilly/cythonize https://github.com/mneilly/kmc2.git \
 	&& cd kmc2 \
+	&& . ~/.bashrc \
 	&& python setup.py install
 
-RUN python setup.py install && pytest tests/ 
+RUN  . ~/.bashrc \
+	&& python3 setup.py install \
+	&& pytest tests/ 
