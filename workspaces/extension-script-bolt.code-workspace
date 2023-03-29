@@ -2,14 +2,14 @@
 	"folders": [
 		{
 			"name": "extension-script",
-			"uri": "vscode-remote://dev-container+cranky_boyd/home/cbenham/extension-script"
+			"uri": "vscode-remote://dev-container+adoring_visvesvaraya/home/cbenham/extension-script"
 		},
 		{
 			"name": "bolt",
-			"uri": "vscode-remote://dev-container+cranky_boyd/home/cbenham/bolt"
+			"uri": "vscode-remote://dev-container+adoring_visvesvaraya/home/cbenham/bolt"
 		}
 	],
-	"remoteAuthority": "dev-container+cranky_boyd",
+	"remoteAuthority": "dev-container+adoring_visvesvaraya",
 	"settings": {
 		"files.associations": {
 			"array": "cpp",
