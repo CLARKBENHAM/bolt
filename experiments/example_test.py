@@ -179,6 +179,10 @@ task=mithral_wrapped.mithral_amm_task_float(N,D,M, ncodebooks, lutconsts)
 
 X= np.stack([np.array([i%16]*(D//2) + [(i%16) for j in range(D//2)]) for i in range(N)])
 Q= np.stack([np.array([i%16]*(M//2) + [16 + i%16]*(M//2)) for i in range(D)])
+#X[::2,:]*=-1
+#Q[::2,:]*=-1
+X[:,::2]*=-1  #Ruins C++ not Py
+X=np.flip(X,0)
 #X=X+np.random.randint(0,10,[N,D])/3 /1 R^2<0, /3 R^2=0.95, /10 R^2=0.98
 #Q=Q+np.random.randint(0,10,[D,M])/3
 #X=X.astype(float)/10
@@ -377,9 +381,9 @@ def copy_python_to_amm(py_est, amm):
   #del py_est 
 
 
-#%%  Copy Python Params to C++, which creates luts/centroidsk 
+#%%  Copy Python Params to C++, which creates luts/codes and generates Y_hat
+print(f"starting:      copying {os.getpid()}")
 copy_python_to_amm(est, task.amm)
-print("starting:      task.run_matmul(True)")
 s=timer()
 task.run_matmul(True)
 Y_hat=(task.amm.out_mat*ncodebooks/task.amm.out_scale) + task.amm.out_offset_sum
@@ -417,7 +421,7 @@ def dists_enc(self, X_enc, Q_luts, unquantize=True,
     return all_dists.T
 
 def dists_enc_short(X_enc, Q_luts, 
-            offset=0, scale=1,upcast_every=2):
+            offset=0, scale=1):
   X_enc = np.ascontiguousarray(X_enc)
   
   all_dists = np.empty((len(Q_luts), len(X_enc)), dtype=np.float32)
@@ -474,7 +478,7 @@ if False: #Make it false when debugging
   print(py_vars, 'X: ', X, 'Q: ', Q, 'Y: ', Y, 'A_enc: ', est.A_enc, 'Luts: ', est.luts.reshape(est.luts.shape[0],-1), sep='\n')
   est.fit(X,Q) #So est is in good state again by end
 
-Y_hat_py=dists_enc_cpp(est.A_enc, est.luts, offset=est.offset, scale=est.scale)
+Y_hat_py=dists_enc_cpp(est.A_enc, est.luts, offset=est.offset, scale=est.scale, ncodebooks=ncodebooks)
 print("cpp mimic in python", 1-r2_score(Y, Y_hat_py))
 copy_python_to_amm(est, task.amm)
 #task.amm.codes=est.A_enc
@@ -524,7 +528,7 @@ if True:
   #Compare C++ and Python give similar Y_hat on random Data
   #(They don't)
   old_x, old_q = map(np.copy, (X,Q))
-  for _ in range(10):
+  for _ in range(5):
     X=np.random.random_sample(X.shape)
     Q=np.random.random_sample(Q.shape)
     Y=X@Q
@@ -569,10 +573,9 @@ task.amm.scan_test() #unzipped version
 Y_hat=task.amm.out_mat
 
 #Make sure to not zip before this
-c1s=np.sum(task.amm.codes[:,0]!=est.A_enc[:,0]) 
-c2s=np.sum(task.amm.codes[:,1]+16!=est.A_enc[:,1])
-assert c1s   == 0, c1s 
-assert c2s == 0, c2s 
+for i in range(ncodebooks):
+  c1s=np.sum(task.amm.codes[:,i]!=est.A_enc[:,i]-i*16) 
+  assert c1s   == 0, c1s 
 
 plt.hist(Y_hat_py.flatten(),bins=30,label='Y_hat_py', alpha=0.5)
 plt.hist(Y_hat.flatten(),bins=30,label='Y_hat',alpha=0.5)
@@ -580,15 +583,17 @@ plt.legend()
 
 #%% #Python matches C++ with random codes/luts (C++ overflows?)
 task.amm.out_mat =np.zeros(Y.shape)
-task.amm.codes=np.random.randint(0, high=16, size=task.amm.codes.size).reshape(task.amm.codes.shape).astype(np.uint8)
-task.amm.luts = 50*np.random.randint(1, high=30, size=task.amm.luts.size).reshape(task.amm.luts.shape).astype(np.uint8)
-#l = np.zeros(task.amm.luts.shape)
-#l[:,1]=[1]*(M//2) + [9]*(M//2) #np.random.randint(2, size=M)
-#l[:,17]=1 # np.random.randint(2, size=M)
+#task.amm.codes=np.random.randint(0, high=16, size=task.amm.codes.size).reshape(task.amm.codes.shape).astype(np.uint8)
+#task.amm.luts = 50*np.random.randint(1, high=30, size=task.amm.luts.size).reshape(task.amm.luts.shape).astype(np.uint8)
+l = np.zeros(task.amm.luts.shape)
+for i in range(ncodebooks):
+  #l[:,i*16+1]=[1]*(M//2) + [9]*(M//2) #np.random.randint(2, size=M)
+  l[:,i*16+1]=[i]*(M//2) + [i]*(M//2) #np.random.randint(2, size=M)
+#l[:,1]= 40*np.random.randint(4, high=6, size=task.amm.luts.shape[0])
 #l[:,0]=[1]*(M//2) + [9]*(M//2) #np.random.randint(2, size=M)
-#l[:,16]=1 # np.random.randint(2, size=M)
-#task.amm.luts = l
-#task.amm.codes=np.ones(task.amm.codes.shape).astype(np.uint8) 
+#l[:,17]=1 # np.random.randint(2, size=M)
+task.amm.luts = l
+task.amm.codes=np.ones(task.amm.codes.shape).astype(np.uint8) 
 #task.amm.luts = np.ones(task.amm.luts.shape).astype(np.uint8) *9
 task.amm.out_scale=1
 task.amm.out_offset_sum=0
@@ -596,10 +601,15 @@ task.amm.out_offset_sum=0
 est_codes=np.copy(task.amm.codes)
 for i in range(ncodebooks):
   est_codes[:,i]+=16*i
-Y_hat_py=dists_enc_cpp(est_codes, task.amm.luts, offset=task.amm.out_offset_sum, scale=task.amm.out_scale)
+
+#Y_hat_py=dists_enc_cpp(est_codes, task.amm.luts, offset=task.amm.out_offset_sum, scale=task.amm.out_scale, ncodebooks=ncodebooks)
+Y_hat_py=dists_enc_short(est_codes, task.amm.luts, offset=task.amm.out_offset_sum, scale=task.amm.out_scale)
+#Below doesn't work to adjust for mithral rounding
+#Y_hat_py=np.floor((Y_hat_py/ncodebooks)*task.amm.out_scale) + task.amm.out_offset_sum 
 task.amm.tmp_codes = task.amm.codes
 task.amm.zip_bolt_colmajor_only()
 task.scan()
+#Round the py version to be accurate comparison
 Y_hat_cpp=(task.output()*ncodebooks/task.amm.out_scale) + task.amm.out_offset_sum #use original mithral scan
 
 print("Py and C++ 1-R^2", 1-r2_score(Y_hat_py, Y_hat_cpp))
@@ -616,7 +626,7 @@ print(np.sort(np.unique(Y_hat_cpp)))
 #%% C++ works with fixed codes/luts 
 task.amm.out_mat =np.zeros(Y.shape)
 task.amm.codes=np.ones(task.amm.codes.shape).astype(float)
-task.amm.luts = np.ones(task.amm.luts.shape)*9
+task.amm.luts = np.ones(task.amm.luts.shape)*90
 task.amm.zip_bolt_colmajor_only()
 task.scan()
 Y_hat_cpp=(task.output()*ncodebooks/task.amm.out_scale) + task.amm.out_offset_sum #use original mithral scan

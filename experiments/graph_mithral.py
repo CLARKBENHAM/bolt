@@ -8,16 +8,19 @@ import math
 from contextlib import contextmanager
 import ctypes
 import tempfile
+import time
 from collections import namedtuple
 from timeit import default_timer as timer
 import numpy as np
 from sklearn.metrics import r2_score
-from operator import itemgetter
+from operator import attrgetter, itemgetter
 import matplotlib.pyplot as plt
 from matplotlib import colors
 import seaborn as sns
 
+from python import matmul_datasets as md 
 from python import vq_amm
+
 try:
   repo_path=os.path.join(os.path.dirname(__file__), "..")
 except:
@@ -105,9 +108,136 @@ def copy_python_to_amm(py_est, amm):
   #segfaults when py_est is changed; but I should be able to delete?
   #del py_est 
 
+#all_tasks=
+data_sources = [md.load_cifar10_tasks(), md.load_cifar100_tasks()]
+#%%
+MetricsSoftmax = namedtuple("MetricsSoftmax", ["np_time", "py_fit_time", "py_est_time", "py_est_r2", "py_est_per_ix_kept", "copy_to_cpp_time", "cpp_est_time", "cpp_est_r2", "cpp_est_per_ix_kept"])
+
+def compute_metrics_train(data, ncodebooks=8):
+  [W_test,W_train, X_test, X_train, Y_test, Y_train] = attrgetter('W_test','W_train', 'X_test', 'X_train', 'Y_test', 'Y_train')(data)
+  lutconsts=-1
+  t = time.perf_counter()
+  Y=X_test@W_test
+  np_time=time.perf_counter() - t
+  mse=np.mean((np.abs(np.ravel(Y) - np.ravel(Y_test)))**2)
+  assert mse < 0.001*Y.size, mse
+  max_ix=np.apply_along_axis(np.argmax, 1, Y_test)
+  
+  hparams_dict = {'ncodebooks': ncodebooks, 'lut_work_const': lutconsts}
+  est = vq_amm.MithralMatmul(**hparams_dict)
+  t = time.perf_counter()
+  est.fit(X_train,W_train)
+  py_fit_time=time.perf_counter() - t
+ 
+  t = time.perf_counter()
+  Y_hat1 = est.predict(X_test, W_test)
+  py_est_time=time.perf_counter() - t
+  py_est_r2 = r2_score(Y,Y_hat1)
+  py_max_ix=np.apply_along_axis(np.argmax, 1, Y_hat1)
+  py_est_per_ix_kept=np.sum(py_max_ix==max_ix)/py_max_ix.size
+   
+  t = time.perf_counter()
+  task=mithral_wrapped.mithral_amm_task_float(*X_test.shape,W_test.shape[1], ncodebooks, lutconsts)
+  task.X=X_test
+  task.Q=W_test
+  copy_python_to_amm(est, task.amm)
+  copy_to_cpp_time=time.perf_counter() - t
+ 
+  t = time.perf_counter()
+  task.run_matmul(True)
+  #multiply by ncodebooks since out_mat is average of correct values
+  Y_hat2=(task.amm.out_mat*ncodebooks/task.amm.out_scale) + task.amm.out_offset_sum
+  cpp_est_time=time.perf_counter() - t
+  cpp_est_r2=r2_score(Y, Y_hat2)
+  cpp_max_ix=np.apply_along_axis(np.argmax, 1, Y_hat2)
+  cpp_est_per_ix_kept=np.sum(cpp_max_ix==max_ix)/cpp_max_ix.size
+  return MetricsSoftmax(np_time, py_fit_time, py_est_time, py_est_r2, py_est_per_ix_kept, copy_to_cpp_time, cpp_est_time, cpp_est_r2, cpp_est_per_ix_kept)
+
+#Run on last layers of NN
+
+results=[]
+ncodebooks=8 #2 works, 4 is bad (because of the extra, unneeded, averaging)?
+#So then how do we increase capacity of c++ version?
+print(f"ncodebooks={ncodebooks}")
+for datas in data_sources[1:]:
+  for data in datas:
+    #o=compute_metrics_train(data, ncodebooks=ncodebooks)
+    [W_test,W_train, X_test, X_train, Y_test, Y_train] = attrgetter('W_test','W_train', 'X_test', 'X_train', 'Y_test', 'Y_train')(data)
+    Y_test=Y_test[:8192]
+    X_test=X_test[:8192]
+    lutconsts=-1
+    t = time.perf_counter()
+    Y=X_test@W_test
+    np_time=time.perf_counter() - t
+    #mse=np.mean((np.abs(np.ravel(Y) - np.ravel(Y_test)))**2)
+    #assert mse < 0.001*Y.size, mse
+    max_ix=np.apply_along_axis(np.argmax, 1, Y_test)
+    
+    hparams_dict = {'ncodebooks': ncodebooks, 'lut_work_const': lutconsts}
+    est = vq_amm.MithralMatmul(**hparams_dict)
+    t = time.perf_counter()
+    est.fit(X_train,W_train)
+    py_fit_time=time.perf_counter() - t
+ 
+    t = time.perf_counter()
+    Y_hat1 = est.predict(X_test, W_test)
+    py_est_time=time.perf_counter() - t
+    py_est_r2 = r2_score(Y,Y_hat1)
+    py_max_ix=np.apply_along_axis(np.argmax, 1, Y_hat1)
+    py_est_per_ix_kept=np.sum(py_max_ix==max_ix)/py_max_ix.size
+     
+    task=mithral_wrapped.mithral_amm_task_float(*X_test.shape,W_test.shape[1], ncodebooks, lutconsts)
+    task.amm.out_mat = np.zeros(task.amm.out_mat.shape)
+    t = time.perf_counter()
+    task.X=X_test
+    task.Q=W_test
+    copy_python_to_amm(est, task.amm)
+    copy_to_cpp_time=time.perf_counter() - t
+ 
+    t = time.perf_counter()
+    #task.mithral_encode_only()
+    #task.lut()
+    #task.amm.scan_test() #unzipped version, will Overflow
+    #Y_hat2=task.amm.out_mat
+    task.run_matmul(True)
+    Y_hat2=(task.amm.out_mat[:Y.shape[0]]*ncodebooks/task.amm.out_scale) + task.amm.out_offset_sum
+    #multiply by ncodebooks since out_mat is average of correct values
+    cpp_est_time=time.perf_counter() - t
+    cpp_est_r2=r2_score(Y, Y_hat2)
+    cpp_max_ix=np.apply_along_axis(np.argmax, 1, Y_hat2)
+    cpp_est_per_ix_kept=np.sum(cpp_max_ix==max_ix)/cpp_max_ix.size
+    o= MetricsSoftmax(np_time, py_fit_time, py_est_time, py_est_r2, py_est_per_ix_kept, copy_to_cpp_time, cpp_est_time, cpp_est_r2, cpp_est_per_ix_kept)
+    
+    results += [o]
+    
+for o in results:
+  print(attrgetter('np_time', 'py_est_r2', 'py_est_per_ix_kept', 'cpp_est_time', 'cpp_est_r2', 'cpp_est_per_ix_kept')(o))
+#%%
+plt.title("Raw Y")
+plt.hist(Y_test.flatten(),bins=30,label='Y',alpha=0.5)
+plt.hist(Y_hat1.flatten(),bins=30,label='Y_hat1', alpha=0.5)
+plt.hist(Y_hat2.flatten(),bins=30,label='Y_hat2', alpha=0.5)
+plt.legend()
+plt.show()
+
+plt.title("Max Ix")
+plt.hist(max_ix,label='Y_ix',alpha=0.5)
+plt.hist(py_max_ix,label='Y_hat1_ix', alpha=0.5)
+plt.hist(cpp_max_ix,label='Y_hat2_ix', alpha=0.5)
+plt.legend()
+plt.show()
+#%%
+# Scrap see what's different
+l=est.luts.reshape(est.luts.shape[0],-1)
+for i in range(ncodebooks):
+  print(i, 'luts', np.sum(l[:,i*16:(i+1)*16]==task.amm.luts[:,i*16:(i+1)*16]))
+  print(i, 'codes', np.sum(est.A_enc[:,i]-i*16==task.amm.codes[:,i]))
+
+#%% Make Comparison Graphs 
+
 Metrics = namedtuple("Metrics", ["np_time", "py_fit_time", "py_est_time", "py_est_r2", "copy_to_cpp_time", "cpp_est_time", "cpp_est_r2"])
 
-def compute_metrics(N,D,M,ncodebooks,X,Q):
+def compute_metrics_no_train(N,D,M,ncodebooks,X,Q):
   lutconsts=-1
   task=mithral_wrapped.mithral_amm_task_float(N,D,M, ncodebooks, lutconsts)
   #ignoring the time to copy to c++ initally
@@ -182,18 +312,18 @@ vectorize_ret_metrics = functools.partial(np.vectorize, otypes=[Metrics])
 
 #%%
 @vectorize_ret_metrics
-def compute_metrics_NM_simple(N,M):
+def compute_metrics_no_train_NM_simple(N,M):
   D=int(N/64)
   ncodebooks=2
   X= np.stack([np.array([i%16]*(D//2) + [(i%16) for j in range(D//2)]) for i in range(N)])
   Q= np.stack([np.array([i%16]*(M//2) + [16 + i%16]*(M//2)) for i in range(D)])
-  return compute_metrics(N,D,M,ncodebooks,X,Q)
+  return compute_metrics_no_train(N,D,M,ncodebooks,X,Q)
 
 #Ns = np.array([4096, 32768, 262144 ]).astype(int) #Kernel Times out
 Ns = np.array([4096, 16384 ]).astype(int)
 Ms = np.array([128,512,2048,8192]).astype(int)
 
-fig, axs,Z1 = make_heatmap(Ns, Ms, compute_metrics_NM_simple)
+fig, axs,Z1 = make_heatmap(Ns, Ms, compute_metrics_no_train_NM_simple)
 fig.suptitle("Basic X and Q, ordered ints from 0-15")
 for ax in axs:
   ax.set_xlabel('N dim sz, D sz=N/64')
@@ -205,20 +335,20 @@ print(Z1)
 
 #%%
 @vectorize_ret_metrics
-def compute_metrics_NM_random(N,M):
+def compute_metrics_no_train_NM_random(N,M):
   D=int(N/64)
   ncodebooks=2
   #X= np.random.uniform(low=0, high=10, size=(N,D))
   #Q= np.random.normal(size=(D,M))*10 #will this work with negative numbers?
   X= np.stack([np.array([i%16]*(D//2) + [(i%16) for j in range(D//2)]) for i in range(N)])
   Q= np.stack([np.array([i%16]*(M//2) + [16 + i%16]*(M//2)) for i in range(D)])
-  return compute_metrics(N,D,M,ncodebooks,X,Q)
+  return compute_metrics_no_train(N,D,M,ncodebooks,X,Q)
 
 #Ns = np.array([4096, 32768, 262144 ]).astype(int) #Kernel Times out
 Ns = np.array([4096, 16384 ]).astype(int)
 Ms = np.array([128,512,2048,8192]).astype(int)
 
-fig, axs,Z3 = make_heatmap(Ns, Ms, compute_metrics_NM_random)
+fig, axs,Z3 = make_heatmap(Ns, Ms, compute_metrics_no_train_NM_random)
 fig.suptitle("Basic X and Q, ordered ints from 0-15")
 for ax in axs:
   ax.set_xlabel('N dim sz, D sz=N/64')
@@ -230,18 +360,18 @@ print(Z3)
 
 #%%  
 @vectorize_ret_metrics
-def compute_metrics_DNC_random(D, ncodebooks):
+def compute_metrics_no_train_DNC_random(D, ncodebooks):
   """Random data change ncodebooks and size of D"""
   N=8192
   M=256
   X= np.random.uniform(low=1, high=100, size=(N,D))
   Q= np.random.normal(size=(D,M))*10 #will this work with negative numbers?
-  return compute_metrics(N,D,M,ncodebooks,X,Q)
+  return compute_metrics_no_train(N,D,M,ncodebooks,X,Q)
 
 Ds= np.array([64,128,256])
 Ncodebooks=np.array([2,4,8,16,32])
 
-fig, axs,Z2 = make_heatmap(Ds, Ncodebooks, compute_metrics_DNC_random)
+fig, axs,Z2 = make_heatmap(Ds, Ncodebooks, compute_metrics_no_train_DNC_random)
 fig.suptitle("X in U[0,10] and Q in N(0,1)*10, N=8192,M=256")
 for ax in axs:
   ax.set_xlabel('D dim sz')
@@ -258,9 +388,24 @@ N,D,M = 4096, 64,128
 ncodebooks=2
 X= np.stack([np.array([i%16]*(D//2) + [(i%16) for j in range(D//2)]) for i in range(N)])
 Q= np.stack([np.array([i%16]*(M//2) + [16 + i%16]*(M//2)) for i in range(D)])
-o=compute_metrics(N,D,M,ncodebooks,X,Q)
-print(compute_metrics(N,D,M,ncodebooks,X,Q))
+o=compute_metrics_no_train(N,D,M,ncodebooks,X,Q)
+print(compute_metrics_no_train(N,D,M,ncodebooks,X,Q))
 
+
+#%% See how good it is if it knows
+
+task=mithral_wrapped.mithral_amm_task_float(*X_train.shape,W_train.shape[1], ncodebooks, lutconsts)
+task.amm.out_mat = np.zeros(task.amm.out_mat.shape)
+t = time.perf_counter()
+task.X=X_train
+task.Q=W_train
+copy_python_to_amm(est, task.amm)
+task.run_matmul(True)
+Y_hat2=(task.amm.out_mat[:Y.shape[0]]*ncodebooks/task.amm.out_scale) + task.amm.out_offset_sum
+cpp_est_r2=r2_score(Y, Y_hat2)
+cpp_max_ix=np.apply_along_axis(np.argmax, 1, Y_hat2)
+cpp_est_per_ix_kept=np.sum(cpp_max_ix==max_ix)/cpp_max_ix.size
+print(cpp_est_r2, cpp_est_per_ix_kept)
 
 
 

@@ -1366,11 +1366,12 @@ void mithral_scan(const uint8_t* codes, int64_t nblocks,
                     out_ptrs[mm] += 32;
                 } else {
                     auto avgs_0_15 = _mm256_cvtepu8_epi16( //used to cast i8s to i16s. No u8 to u16 instruction
-                         _mm256_extracti128_si256(group_avg, 0));
+                        _mm256_extracti128_si256(group_avg, 0));
                     auto avgs_16_31 = _mm256_cvtepu8_epi16(
                         _mm256_extracti128_si256(group_avg, 1));
-                    totals_0_15[mm] = _mm256_adds_epu16(totals_0_15[mm], avgs_0_15);
-                    totals_16_31[mm] = _mm256_adds_epu16(totals_16_31[mm], avgs_16_31);
+                    //with _mm256_adds_epu16 we can't handle negative avgs; immediatly to 2^16
+                    totals_0_15[mm] = _mm256_add_epi16(totals_0_15[mm], avgs_0_15);
+                    totals_16_31[mm] = _mm256_add_epi16(totals_16_31[mm], avgs_16_31);
                 }
             }
         }
