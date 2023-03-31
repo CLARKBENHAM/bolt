@@ -48,7 +48,7 @@ void mithral_scan_test(const uint8_t* codes, int N, int ncodebooks, int M,
       float dist = 0;
       //codes is col matrix
       for (int code_ix = 0; code_ix < ncodebooks; code_ix ++) {
-        dist += lut[codes[j + code_ix*N] + 16*code_ix]; //Think it's good for ncodebooks
+        dist += lut[codes[j + code_ix*N] + 16*code_ix]; 
       }
       //How Py does it in a row matrix
       ///float_dists_out[i + j * m] = ((dist / scale) + offset);
@@ -68,7 +68,7 @@ void mithral_scan_test(const uint8_t* codes, int N, int ncodebooks, int M,
       float dist = 0;
       //codes is col matrix
       for (int code_ix = 0; code_ix < ncodebooks; code_ix ++) {
-        dist += lut[codes[j + code_ix*N] + 16*code_ix]; //Think it's good for ncodebooks
+        dist += lut[codes[j + code_ix*N] + 16*code_ix]; 
       }
       //How Py does it in a row matrix
       ///float_dists_out[i + j * m] = ((dist / scale) + offset);
@@ -92,8 +92,8 @@ void mithral_scan_test_zipped(const uint8_t* codes, int n, int ncodebooks, int m
         auto code_byte = codes[j + code_ix*n];
         auto code0 = code_byte & 0x0F;
         auto code1 = (code_byte & 0xF0) >> 4;
-        dist += lut[code0 + 16*code_ix];
-        dist += lut[code1 + 16*code_ix];
+        dist += lut[code0 + 32*code_ix];
+        dist += lut[code1 + 32*code_ix + 16];
       }
       float_dists_out[i*n + j] = ((dist/scale) + offset);
     }
@@ -547,7 +547,9 @@ void mithral_lut_sparse(const float* Q, int nrows, int ncols, int ncodebooks,
     float tmp_offsets[ncodebooks];
     mithral_learn_lut_offsets_scales(tmp_lut_f32, nrows, ncodebooks,
         tmp_offsets, out_offset_sum, out_scale);
-    quantize_luts(tmp_lut_f32, nrows, ncodebooks, tmp_offsets, out_scale, out);
+    //out_scale was 1.992 vs 0.998 exp, tmp_offsets 0s(?) //If you do -exec p/d out_scale you get 1 out, incorrect summary
+    volatile auto s = out_scale;
+    quantize_luts(tmp_lut_f32, nrows, ncodebooks, tmp_offsets, s, out);
 }
 
 // ================================================================ scan

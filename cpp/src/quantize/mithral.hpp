@@ -352,6 +352,7 @@ void _compute_offsets_scale_from_mins_maxs(
     // float offset = 0;
     out_offset_sum = 0;
     __m256 vmax = _mm256_set1_ps(std::numeric_limits<float>::min());
+    volatile __m256 vmax2;
     for (int c = 0; c < ncodebooks; c++) {
         auto vmin = broadcast_min(mins[c]);
         auto offset = pfirst(vmin);  // minimum value
@@ -360,8 +361,10 @@ void _compute_offsets_scale_from_mins_maxs(
 
         // update vector of max vals seen so far
         vmax = _mm256_max_ps(vmax, _mm256_sub_ps(maxs[c], vmin));
+        vmax2=vmax;
     }
     vmax = broadcast_max(vmax);
+    vmax2=vmax;
     out_scale = pfirst(vmax);
     if (out_scale <= 0.f) {
         out_scale = 0.;
@@ -853,8 +856,8 @@ void mithral_learn_lut_offsets_scales(
 
                 mins[c] = _mm256_min_ps(mins[c], vlut_stripe0);
                 mins[c] = _mm256_min_ps(mins[c], vlut_stripe1);
-                maxs[c] = _mm256_max_ps(mins[c], vlut_stripe0);
-                maxs[c] = _mm256_max_ps(mins[c], vlut_stripe1);
+                maxs[c] = _mm256_max_ps(maxs[c], vlut_stripe0);
+                maxs[c] = _mm256_max_ps(maxs[c], vlut_stripe1);
             }
         }
     }
@@ -868,8 +871,13 @@ void mithral_learn_lut_offsets_scales(
 
             mins[c] = _mm256_min_ps(mins[c], vlut_stripe0);
             mins[c] = _mm256_min_ps(mins[c], vlut_stripe1);
-            maxs[c] = _mm256_max_ps(mins[c], vlut_stripe0);
-            maxs[c] = _mm256_max_ps(mins[c], vlut_stripe1);
+            maxs[c] = _mm256_max_ps(maxs[c], vlut_stripe0);
+            maxs[c] = _mm256_max_ps(maxs[c], vlut_stripe1);
+            volatile auto x = mins[c]; //TODO GRIB
+            x=vlut_stripe0;
+            x=vlut_stripe1;
+            x=maxs[c];
+            maxs[c]=x;
         }
     }
     _compute_offsets_scale_from_mins_maxs(
@@ -988,8 +996,9 @@ void quantize_luts(const float* luts_f32, int nrows,
                 in_ptr += packet_width;
                 auto vlut_f32_1 = _mm256_load_ps(in_ptr);
                 in_ptr += packet_width;
-
-                vlut_f32_0 = _mm256_fmsub_ps(vlut_f32_0, vmulby, voffset);
+                
+                //multiply then subtract, but to get final out we divide then add. a*b-c = x; x/b+c!=a
+                vlut_f32_0 = _mm256_fmsub_ps(vlut_f32_0, vmulby, voffset); 
                 vlut_f32_1 = _mm256_fmsub_ps(vlut_f32_1, vmulby, voffset);
                 // vlut_f32_0 = fma(vlut_f32_0, vmulby, voffset);
                 // vlut_f32_1 = fma(vlut_f32_1, vmulby, voffset);
@@ -1001,7 +1010,10 @@ void quantize_luts(const float* luts_f32, int nrows,
             }
             auto lut0 = luts_epi16[0][0];
             auto lut1 = luts_epi16[0][1];
-            auto lut = _mm256_packus_epi16(lut0, lut1);
+            //we're saturating to 255 for everything that was above the cutoff.
+            //Why do we need to multiply the luts by scaleby? That's what causes everything to hit max
+            //(In case scaleby was 0.01 and everything would just got to 0 without it)
+            auto lut = _mm256_packus_epi16(lut0, lut1); 
             lut = _mm256_permutevar8x32_epi32(
                 lut, _mm256_setr_epi32(0,4, 1,5, 2,6, 3,7));
             _mm256_store_si256((__m256i*)out_ptr, lut);
@@ -1259,14 +1271,14 @@ void mithral_scan(const uint8_t* codes, int64_t nblocks,
 
         for (int g = 0; g < ncolgroups; g++) {
 
-            __m256i avg_prev1[OutTileSz];
-            __m256i avg_prev2[OutTileSz];
-            __m256i avg_prev4[OutTileSz];
-            __m256i avg_prev8[OutTileSz];
-            __m256i avg_prev16[OutTileSz];
-            __m256i avg_prev32[OutTileSz];
-            __m256i avg_prev64[OutTileSz];
-            __m256i avg_prev128[OutTileSz];
+            volatile __m256i avg_prev1[OutTileSz];
+            volatile __m256i avg_prev2[OutTileSz];
+            volatile __m256i avg_prev4[OutTileSz];
+            volatile __m256i avg_prev8[OutTileSz];
+            volatile __m256i avg_prev16[OutTileSz];
+            volatile __m256i avg_prev32[OutTileSz];
+            volatile __m256i avg_prev64[OutTileSz];
+            volatile __m256i avg_prev128[OutTileSz];
             for (int mm = 0; mm < OutTileSz; mm++) {
                 avg_prev1[mm] = _mm256_undefined_si256();
                 avg_prev2[mm] = _mm256_undefined_si256();
@@ -1284,19 +1296,19 @@ void mithral_scan(const uint8_t* codes, int64_t nblocks,
 
                 auto x_col = load_si256i(codes); //have 256/4=64 entries in x_col, each int represents 2 centroid_ix or'd and shifted
                 codes += 32;
-                auto x_low = _mm256_and_si256(x_col, low_4bits_mask);
-                auto x_shft = _mm256_srli_epi16(x_col, 4); //x_shft is good: print([i&15 for i in [] ])
-                auto x_high = _mm256_and_si256(x_shft, low_4bits_mask);
+                volatile auto x_low = _mm256_and_si256(x_col, low_4bits_mask);
+                auto x_shft = _mm256_srli_epi16(x_col, 4); //x_shft is good: print([i&15 for i in [] ])  
+                volatile auto x_high = _mm256_and_si256(x_shft, low_4bits_mask);  //shifting each i16 by 4 moves '2 codes' to low_ix, and out just the 2 i8 codes
 
                 for (int mm = 0; mm < OutTileSz; mm++) {
-                    auto lut_low = lut_arrays[2 * j][mm]; //luts are 16B each, 16 in total?
-                    auto lut_high = lut_arrays[2 * j + 1][mm];
+                    volatile auto lut_low = lut_arrays[2 * j][mm]; //luts are 8B each, 32 in each 
+                    volatile auto lut_high = lut_arrays[2 * j + 1][mm];
                     
                     //Matches: np.ravel(task.amm.luts, order='c')[np.ravel(task.amm.codes, order='f')[:32]]
-                    auto dists_low = _mm256_shuffle_epi8(lut_low, x_low);
-                    auto dists_high = _mm256_shuffle_epi8(lut_high, x_high);
+                    volatile auto dists_low = _mm256_shuffle_epi8(lut_low, x_low);
+                    volatile auto dists_high = _mm256_shuffle_epi8(lut_high, x_high);
 
-                    auto avgs = _mm256_avg_epu8(dists_low, dists_high);
+                    volatile auto avgs = _mm256_avg_epu8(dists_low, dists_high);
 
                     // update running averages; this is messy because you
                     // need the current and previous average to be over the same
@@ -1353,7 +1365,7 @@ void mithral_scan(const uint8_t* codes, int64_t nblocks,
             }
 
             for (int mm = 0; mm < OutTileSz; mm++) {
-                auto group_avg = colgroup_sz == 1  ? avg_prev1[mm] :
+                volatile auto group_avg = colgroup_sz == 1  ? avg_prev1[mm] :
                                  colgroup_sz == 2  ? avg_prev2[mm] :
                                  colgroup_sz == 4  ? avg_prev4[mm] :
                                  colgroup_sz == 8  ? avg_prev8[mm] :
@@ -1369,9 +1381,9 @@ void mithral_scan(const uint8_t* codes, int64_t nblocks,
                         _mm256_extracti128_si256(group_avg, 0));
                     auto avgs_16_31 = _mm256_cvtepu8_epi16(
                         _mm256_extracti128_si256(group_avg, 1));
-                    //with _mm256_adds_epu16 we can't handle negative avgs; immediatly to 2^16
-                    totals_0_15[mm] = _mm256_add_epi16(totals_0_15[mm], avgs_0_15);
-                    totals_16_31[mm] = _mm256_add_epi16(totals_16_31[mm], avgs_16_31);
+                    //with _mm256_adds_epu16 vs add_epi16 won't make a difference, as long as <128 ncolgroups 
+                    totals_0_15[mm] = _mm256_adds_epu16(totals_0_15[mm], avgs_0_15);
+                    totals_16_31[mm] = _mm256_adds_epu16(totals_16_31[mm], avgs_16_31);
                 }
             }
         }
@@ -1488,10 +1500,10 @@ void mithral_scan_in_chunks(const uint8_t* codes, int64_t nblocks, int ncodebook
             mithral_scan_T<UpcastEvery, OutTileSz, OutType>(
                codes_ptr, use_nblocks, ncodebooks, lut_ptr, out_ptr, nblocks*block_nrows);
             
-            ////works with zipped values
-            //auto n = 4096; //should be learned
-            //mithral_scan_test_zipped(codes_ptr, n, ncodebooks, 2,
-            //       0, 0.0156,
+            //// works with zipped values
+            //auto n = out_col_stride; //4096
+            //mithral_scan_test_zipped(codes_ptr, n, ncodebooks, OutTileSz,
+            //       0, 1,
             //       lut_ptr, reinterpret_cast<uint16_t*>(out_ptr));
     
             //We're iterating over columns of output, and rows of Luts
