@@ -113,56 +113,16 @@ data_sources = [md.load_cifar10_tasks(), md.load_cifar100_tasks()]
 #%%
 MetricsSoftmax = namedtuple("MetricsSoftmax", ["np_time", "py_fit_time", "py_est_time", "py_est_r2", "py_est_per_ix_kept", "copy_to_cpp_time", "cpp_est_time", "cpp_est_r2", "cpp_est_per_ix_kept"])
 
-def compute_metrics_train(data, ncodebooks=8):
-  [W_test,W_train, X_test, X_train, Y_test, Y_train] = attrgetter('W_test','W_train', 'X_test', 'X_train', 'Y_test', 'Y_train')(data)
-  lutconsts=-1
-  t = time.perf_counter()
-  Y=X_test@W_test
-  np_time=time.perf_counter() - t
-  mse=np.mean((np.abs(np.ravel(Y) - np.ravel(Y_test)))**2)
-  assert mse < 0.001*Y.size, mse
-  max_ix=np.apply_along_axis(np.argmax, 1, Y_test)
-  
-  hparams_dict = {'ncodebooks': ncodebooks, 'lut_work_const': lutconsts}
-  est = vq_amm.MithralMatmul(**hparams_dict)
-  t = time.perf_counter()
-  est.fit(X_train,W_train)
-  py_fit_time=time.perf_counter() - t
- 
-  t = time.perf_counter()
-  Y_hat1 = est.predict(X_test, W_test)
-  py_est_time=time.perf_counter() - t
-  py_est_r2 = r2_score(Y,Y_hat1)
-  py_max_ix=np.apply_along_axis(np.argmax, 1, Y_hat1)
-  py_est_per_ix_kept=np.sum(py_max_ix==max_ix)/py_max_ix.size
-   
-  t = time.perf_counter()
-  task=mithral_wrapped.mithral_amm_task_float(*X_test.shape,W_test.shape[1], ncodebooks, lutconsts)
-  task.X=X_test
-  task.Q=W_test
-  copy_python_to_amm(est, task.amm)
-  copy_to_cpp_time=time.perf_counter() - t
- 
-  t = time.perf_counter()
-  task.run_matmul(True)
-  #multiply by ncodebooks since out_mat is average of correct values
-  Y_hat2=(task.amm.out_mat*ncodebooks/task.amm.out_scale) + task.amm.out_offset_sum
-  cpp_est_time=time.perf_counter() - t
-  cpp_est_r2=r2_score(Y, Y_hat2)
-  cpp_max_ix=np.apply_along_axis(np.argmax, 1, Y_hat2)
-  cpp_est_per_ix_kept=np.sum(cpp_max_ix==max_ix)/cpp_max_ix.size
-  return MetricsSoftmax(np_time, py_fit_time, py_est_time, py_est_r2, py_est_per_ix_kept, copy_to_cpp_time, cpp_est_time, cpp_est_r2, cpp_est_per_ix_kept)
-
 #Run on last layers of NN
-
 results=[]
-ncodebooks=8 #2 works, 4 is bad (because of the extra, unneeded, averaging)?
+ncodebooks=4 #2 c++ and Py match, 4 is bad (because of the extra, unneeded, averaging)?
 #So then how do we increase capacity of c++ version?
 print(f"ncodebooks={ncodebooks}")
-for datas in data_sources[1:]:
+for datas in data_sources:
   for data in datas:
     #o=compute_metrics_train(data, ncodebooks=ncodebooks)
     [W_test,W_train, X_test, X_train, Y_test, Y_train] = attrgetter('W_test','W_train', 'X_test', 'X_train', 'Y_test', 'Y_train')(data)
+    #Mithral C++ doesn't work with counts not aligned to 32
     Y_test=Y_test[:8192]
     X_test=X_test[:8192]
     lutconsts=-1
@@ -198,9 +158,9 @@ for datas in data_sources[1:]:
     #task.mithral_encode_only()
     #task.lut()
     #task.amm.scan_test() #unzipped version, will Overflow
-    #Y_hat2=task.amm.out_mat
     task.run_matmul(True)
-    Y_hat2=(task.amm.out_mat[:Y.shape[0]]*ncodebooks/task.amm.out_scale) + task.amm.out_offset_sum
+    #Y_hat2=task.amm.out_mat*0.06226/(task.amm.out_scale) + task.amm.out_offset_sum
+    Y_hat2=(task.amm.out_mat/task.amm.out_scale) + task.amm.out_offset_sum
     #multiply by ncodebooks since out_mat is average of correct values
     cpp_est_time=time.perf_counter() - t
     cpp_est_r2=r2_score(Y, Y_hat2)
@@ -214,16 +174,16 @@ for o in results:
   print(attrgetter('np_time', 'py_est_r2', 'py_est_per_ix_kept', 'cpp_est_time', 'cpp_est_r2', 'cpp_est_per_ix_kept')(o))
 #%%
 plt.title("Raw Y")
-plt.hist(Y_test.flatten(),bins=30,label='Y',alpha=0.5)
-plt.hist(Y_hat1.flatten(),bins=30,label='Y_hat1', alpha=0.5)
-plt.hist(Y_hat2.flatten(),bins=30,label='Y_hat2', alpha=0.5)
+plt.hist(Y_test.flatten(),bins=30,label='Y',alpha=0.3)
+plt.hist(Y_hat1.flatten(),bins=30,label='Y_hat1', alpha=0.3)
+plt.hist(Y_hat2.flatten(),bins=30,label='Y_hat2', alpha=0.3)
 plt.legend()
 plt.show()
 
 plt.title("Max Ix")
-plt.hist(max_ix,label='Y_ix',alpha=0.5)
-plt.hist(py_max_ix,label='Y_hat1_ix', alpha=0.5)
-plt.hist(cpp_max_ix,label='Y_hat2_ix', alpha=0.5)
+plt.hist(max_ix,label='Y_ix',alpha=0.3)
+plt.hist(py_max_ix,label='Y_hat1_ix', alpha=0.3)
+plt.hist(cpp_max_ix,label='Y_hat2_ix', alpha=0.3)
 plt.legend()
 plt.show()
 #%%

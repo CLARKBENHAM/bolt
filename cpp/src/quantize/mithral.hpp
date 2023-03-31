@@ -1234,6 +1234,9 @@ void mithral_scan(const uint8_t* codes, int64_t nblocks,
     static constexpr bool use_uint8_output = std::is_same<OutType, uint8_t>::value && ncolgroups == 1 && !Force16BitOutput;
     static constexpr int OutTileSz = _OutTileSz > 0 ? _OutTileSz : 1;
 
+    static constexpr bool avg_as_int8 = use_uint8_output; 
+    static_assert(avg_as_int8 >= use_uint8_output, "use_uint8_output implies avg_as_int8, but could ouput int16 and avg_as_int8");
+
     //out_stride should always equal N since colmajor matrix? Won't always for last chunk of blocks from mithral_scan_in_chunks
     //int64_t out_stride = use_uint8_output ? nblocks * 32 : 2 * nblocks * 32; //int16 output should keep stride outputs the same
     int64_t out_stride = N > 0 ? N : nblocks * 32; //int16 vs int8 dists_out still inc ix by same amount
@@ -1308,63 +1311,79 @@ void mithral_scan(const uint8_t* codes, int64_t nblocks,
                     volatile auto dists_low = _mm256_shuffle_epi8(lut_low, x_low);
                     volatile auto dists_high = _mm256_shuffle_epi8(lut_high, x_high);
 
-                    volatile auto avgs = _mm256_avg_epu8(dists_low, dists_high);
+                    if (avg_as_int8) {
+                        volatile auto avgs = _mm256_avg_epu8(dists_low, dists_high);
 
-                    // update running averages; this is messy because you
-                    // need the current and previous average to be over the same
-                    // number of values, or else it's a weird weighted average
-                    // instead of a true average;
-                    // note that we need to use inline asm to get the right
-                    // instruction here on my machine for unclear reasons
-                    if (gg % 128 == 127) {
-                        assert(gg < 128);//else avg_prev128 incorrect
-                        auto new_avg_prev2 = avg_epu8(avg_prev1[mm], avgs);
-                        auto new_avg_prev4 = avg_epu8(avg_prev2[mm], new_avg_prev2);
-                        auto new_avg_prev8 = avg_epu8(avg_prev4[mm], new_avg_prev4);
-                        auto new_avg_prev16 = avg_epu8(avg_prev8[mm], new_avg_prev8);
-                        auto new_avg_prev32 = avg_epu8(avg_prev16[mm], new_avg_prev16);
-                        auto new_avg_prev64 = avg_epu8(avg_prev32[mm], new_avg_prev32);
-                        avg_prev128[mm] = avg_epu8(avg_prev64[mm], new_avg_prev64);
-                    }
-                    if (gg % 64 == 63) {
-                        auto new_avg_prev2 = avg_epu8(avg_prev1[mm], avgs);
-                        auto new_avg_prev4 = avg_epu8(avg_prev2[mm], new_avg_prev2);
-                        auto new_avg_prev8 = avg_epu8(avg_prev4[mm], new_avg_prev4);
-                        auto new_avg_prev16 = avg_epu8(avg_prev8[mm], new_avg_prev8);
-                        auto new_avg_prev32 = avg_epu8(avg_prev16[mm], new_avg_prev16);
-                        avg_prev64[mm] = avg_epu8(avg_prev32[mm], new_avg_prev32);
-                    }
-                    if (gg % 32 == 31) {
-                        auto new_avg_prev2 = avg_epu8(avg_prev1[mm], avgs);
-                        auto new_avg_prev4 = avg_epu8(avg_prev2[mm], new_avg_prev2);
-                        auto new_avg_prev8 = avg_epu8(avg_prev4[mm], new_avg_prev4);
-                        auto new_avg_prev16 = avg_epu8(avg_prev8[mm], new_avg_prev8);
-                        avg_prev32[mm] = avg_epu8(avg_prev16[mm], new_avg_prev16);
-                    }
-                    if (gg % 16 == 15) {
-                        auto new_avg_prev2 = avg_epu8(avg_prev1[mm], avgs);
-                        auto new_avg_prev4 = avg_epu8(avg_prev2[mm], new_avg_prev2);
-                        auto new_avg_prev8 = avg_epu8(avg_prev4[mm], new_avg_prev4);
-                        avg_prev16[mm] = avg_epu8(avg_prev8[mm], new_avg_prev8);
-                    }
-                    if (gg % 8 == 7) {
-                        auto new_avg_prev2 = avg_epu8(avg_prev1[mm], avgs);
-                        auto new_avg_prev4 = avg_epu8(avg_prev2[mm], new_avg_prev2);
-                        avg_prev8[mm] = avg_epu8(avg_prev4[mm], new_avg_prev4);
-                    }
-                    if (gg % 4 == 3) {
-                        auto new_avg_prev2 = avg_epu8(avg_prev1[mm], avgs);
-                        avg_prev4[mm] = avg_epu8(avg_prev2[mm], new_avg_prev2);
-                    }
-                    if (gg % 2 == 1) {
-                        avg_prev2[mm] = avg_epu8(avg_prev1[mm], avgs);
-                    } else {
-                        avg_prev1[mm] = avgs;
+                        // update running averages; this is messy because you
+                        // need the current and previous average to be over the same
+                        // number of values, or else it's a weird weighted average
+                        // instead of a true average;
+                        // note that we need to use inline asm to get the right
+                        // instruction here on my machine for unclear reasons
+                        if (gg % 128 == 127) {
+                            assert(gg < 128);//else avg_prev128 incorrect
+                            auto new_avg_prev2 = avg_epu8(avg_prev1[mm], avgs);
+                            auto new_avg_prev4 = avg_epu8(avg_prev2[mm], new_avg_prev2);
+                            auto new_avg_prev8 = avg_epu8(avg_prev4[mm], new_avg_prev4);
+                            auto new_avg_prev16 = avg_epu8(avg_prev8[mm], new_avg_prev8);
+                            auto new_avg_prev32 = avg_epu8(avg_prev16[mm], new_avg_prev16);
+                            auto new_avg_prev64 = avg_epu8(avg_prev32[mm], new_avg_prev32);
+                            avg_prev128[mm] = avg_epu8(avg_prev64[mm], new_avg_prev64);
+                        }
+                        if (gg % 64 == 63) {
+                            auto new_avg_prev2 = avg_epu8(avg_prev1[mm], avgs);
+                            auto new_avg_prev4 = avg_epu8(avg_prev2[mm], new_avg_prev2);
+                            auto new_avg_prev8 = avg_epu8(avg_prev4[mm], new_avg_prev4);
+                            auto new_avg_prev16 = avg_epu8(avg_prev8[mm], new_avg_prev8);
+                            auto new_avg_prev32 = avg_epu8(avg_prev16[mm], new_avg_prev16);
+                            avg_prev64[mm] = avg_epu8(avg_prev32[mm], new_avg_prev32);
+                        }
+                        if (gg % 32 == 31) {
+                            auto new_avg_prev2 = avg_epu8(avg_prev1[mm], avgs);
+                            auto new_avg_prev4 = avg_epu8(avg_prev2[mm], new_avg_prev2);
+                            auto new_avg_prev8 = avg_epu8(avg_prev4[mm], new_avg_prev4);
+                            auto new_avg_prev16 = avg_epu8(avg_prev8[mm], new_avg_prev8);
+                            avg_prev32[mm] = avg_epu8(avg_prev16[mm], new_avg_prev16);
+                        }
+                        if (gg % 16 == 15) {
+                            auto new_avg_prev2 = avg_epu8(avg_prev1[mm], avgs);
+                            auto new_avg_prev4 = avg_epu8(avg_prev2[mm], new_avg_prev2);
+                            auto new_avg_prev8 = avg_epu8(avg_prev4[mm], new_avg_prev4);
+                            avg_prev16[mm] = avg_epu8(avg_prev8[mm], new_avg_prev8);
+                        }
+                        if (gg % 8 == 7) {
+                            auto new_avg_prev2 = avg_epu8(avg_prev1[mm], avgs);
+                            auto new_avg_prev4 = avg_epu8(avg_prev2[mm], new_avg_prev2);
+                            avg_prev8[mm] = avg_epu8(avg_prev4[mm], new_avg_prev4);
+                        }
+                        if (gg % 4 == 3) {
+                            auto new_avg_prev2 = avg_epu8(avg_prev1[mm], avgs);
+                            avg_prev4[mm] = avg_epu8(avg_prev2[mm], new_avg_prev2);
+                        }
+                        if (gg % 2 == 1) {
+                            avg_prev2[mm] = avg_epu8(avg_prev1[mm], avgs);
+                        } else {
+                            avg_prev1[mm] = avgs;
+                        }
+                    } else { //sum as int16 
+                        auto avgs_0_15_low = _mm256_cvtepu8_epi16( //used to cast i8s to i16s. No u8 to u16 instruction
+                            _mm256_extracti128_si256(dists_low, 0));
+                        auto avgs_16_31_low = _mm256_cvtepu8_epi16(
+                            _mm256_extracti128_si256(dists_low, 1));
+                        auto avgs_0_15_high = _mm256_cvtepu8_epi16( 
+                            _mm256_extracti128_si256(dists_high, 0));
+                        auto avgs_16_31_high = _mm256_cvtepu8_epi16(
+                            _mm256_extracti128_si256(dists_high, 1));
+                        //with _mm256_adds_epu16 vs add_epi16 won't make a difference, as long as <128 ncolgroups 
+                        totals_0_15[mm] = _mm256_adds_epu16(totals_0_15[mm], avgs_0_15_low);
+                        totals_16_31[mm] = _mm256_adds_epu16(totals_16_31[mm], avgs_16_31_low);
+                        totals_0_15[mm] = _mm256_adds_epu16(totals_0_15[mm], avgs_0_15_high);
+                        totals_16_31[mm] = _mm256_adds_epu16(totals_16_31[mm], avgs_16_31_high);
                     }
                 }
             }
 
-            for (int mm = 0; mm < OutTileSz; mm++) {
+            for (int mm = 0; avg_as_int8 && mm < OutTileSz; mm++) {
                 volatile auto group_avg = colgroup_sz == 1  ? avg_prev1[mm] :
                                  colgroup_sz == 2  ? avg_prev2[mm] :
                                  colgroup_sz == 4  ? avg_prev4[mm] :
@@ -1384,7 +1403,7 @@ void mithral_scan(const uint8_t* codes, int64_t nblocks,
                     //with _mm256_adds_epu16 vs add_epi16 won't make a difference, as long as <128 ncolgroups 
                     totals_0_15[mm] = _mm256_adds_epu16(totals_0_15[mm], avgs_0_15);
                     totals_16_31[mm] = _mm256_adds_epu16(totals_16_31[mm], avgs_16_31);
-                }
+                } 
             }
         }
         if (!use_uint8_output) {

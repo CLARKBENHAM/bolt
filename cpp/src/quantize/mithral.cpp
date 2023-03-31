@@ -87,7 +87,7 @@ void mithral_scan_test_zipped(const uint8_t* codes, int n, int ncodebooks, int m
   for (int i = 0; i < m; i++) {
     const uint8_t* lut = luts + i * ncodebooks * 16;
     for (int j = 0; j < n; j++) {
-      float dist = 0;
+      uint16_t dist = 0;
       for (int code_ix = 0; code_ix < ncodebooks/2; code_ix ++) {
         auto code_byte = codes[j + code_ix*n];
         auto code0 = code_byte & 0x0F;
