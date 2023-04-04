@@ -262,8 +262,8 @@ namespace {
 // for i in range(ncodebooks//2):
 //   x=np.bitwise_or(c[:,2*i], 16*c[:,2*i+1])%256
 //   out[:,i]=x
-// print(list(map(np.unique, np.where(out!=task.amm.codes))))
-// assert(np.all(out==task.amm.codes))
+// print(list(map(np.unique, np.where((out!=task.amm.codes)[:, :ncodebooks//2]))))
+// assert(np.all((out==task.amm.codes)[:, :ncodebooks//2])) @#only front 1/2 changed
 template<int NReadColsAtOnce=2>
 inline void zip_bolt_colmajor(const uint8_t* codes_in, int64_t nrows,
                               uint32_t ncodebooks, uint8_t* codes_out)
@@ -1210,6 +1210,7 @@ void mithral_scan_notile(const uint8_t* codes, int64_t nblocks,
     }
 }
 
+// I don't think this handles UpcastEvery correctly
 template<int NBytes, int UpcastEvery=16, int _OutTileSz=1,
          bool Force16BitOutput=false, typename OutType=uint8_t>
 void mithral_scan(const uint8_t* codes, int64_t nblocks,
@@ -1246,6 +1247,12 @@ void mithral_scan(const uint8_t* codes, int64_t nblocks,
     for (int mm = 0; mm < OutTileSz; mm++) {
         out_ptrs[mm] = dists_out + (mm * out_stride);
     }
+    
+    //start of each code col at the top
+    const uint8_t* code_cols[NBytes];
+    for (uint8_t j = 0; j < NBytes; j++) {
+        code_cols[j] = codes + j*out_stride;    
+    }
 
     // unpack 16B luts into 32B registers
     __m256i lut_arrays[ncodebooks][OutTileSz];
@@ -1262,7 +1269,6 @@ void mithral_scan(const uint8_t* codes, int64_t nblocks,
     }
 
     for (int64_t i = 0; i < nblocks; i++) {
-        // used if ncolgroups > 1, in which case we have to upcast
         __m256i totals_0_15[OutTileSz];
         __m256i totals_16_31[OutTileSz];
         for (int mm = 0; mm < OutTileSz; mm++) {
@@ -1295,10 +1301,12 @@ void mithral_scan(const uint8_t* codes, int64_t nblocks,
 
             #pragma unroll
             for (int gg = 0; gg < colgroup_sz; gg++) {
-                auto j = (g * colgroup_sz) + gg;
-
-                auto x_col = load_si256i(codes); //have 256/4=64 entries in x_col, each int represents 2 centroid_ix or'd and shifted
-                codes += 32;
+                auto j = (g * colgroup_sz) + gg; //j is codebook_ix
+                
+                auto x_col = load_si256i(code_cols[j]); 
+                code_cols[j] += 32;
+                //auto x_col = load_si256i(codes); //have 256/4=64 entries in x_col, each int represents 2 centroid_ix or'd and shifted
+                //codes += 32;
                 volatile auto x_low = _mm256_and_si256(x_col, low_4bits_mask);
                 auto x_shft = _mm256_srli_epi16(x_col, 4); //x_shft is good: print([i&15 for i in [] ])  
                 volatile auto x_high = _mm256_and_si256(x_shft, low_4bits_mask);  //shifting each i16 by 4 moves '2 codes' to low_ix, and out just the 2 i8 codes
@@ -1366,13 +1374,13 @@ void mithral_scan(const uint8_t* codes, int64_t nblocks,
                             avg_prev1[mm] = avgs;
                         }
                     } else { //sum as int16 
-                        auto avgs_0_15_low = _mm256_cvtepu8_epi16( //used to cast i8s to i16s. No u8 to u16 instruction
+                        volatile auto avgs_0_15_low = _mm256_cvtepu8_epi16( //used to cast i8s to i16s. No u8 to u16 instruction
                             _mm256_extracti128_si256(dists_low, 0));
-                        auto avgs_16_31_low = _mm256_cvtepu8_epi16(
+                        volatile auto avgs_16_31_low = _mm256_cvtepu8_epi16(
                             _mm256_extracti128_si256(dists_low, 1));
-                        auto avgs_0_15_high = _mm256_cvtepu8_epi16( 
+                        volatile auto avgs_0_15_high = _mm256_cvtepu8_epi16( 
                             _mm256_extracti128_si256(dists_high, 0));
-                        auto avgs_16_31_high = _mm256_cvtepu8_epi16(
+                        volatile auto avgs_16_31_high = _mm256_cvtepu8_epi16(
                             _mm256_extracti128_si256(dists_high, 1));
                         //with _mm256_adds_epu16 vs add_epi16 won't make a difference, as long as <128 ncolgroups 
                         totals_0_15[mm] = _mm256_adds_epu16(totals_0_15[mm], avgs_0_15_low);
@@ -1396,7 +1404,7 @@ void mithral_scan(const uint8_t* codes, int64_t nblocks,
                     _mm256_stream_si256((__m256i*)out_ptrs[mm], group_avg);
                     out_ptrs[mm] += 32;
                 } else {
-                    auto avgs_0_15 = _mm256_cvtepu8_epi16( //used to cast i8s to i16s. No u8 to u16 instruction
+                    auto avgs_0_15 = _mm256_cvtepu8_epi16( //used to cast u8s to i16s=u16s here
                         _mm256_extracti128_si256(group_avg, 0));
                     auto avgs_16_31 = _mm256_cvtepu8_epi16(
                         _mm256_extracti128_si256(group_avg, 1));
@@ -1510,20 +1518,20 @@ void mithral_scan_in_chunks(const uint8_t* codes, int64_t nblocks, int ncodebook
             auto nblocks_done = chunk * chunk_nblocks;
             use_nblocks = nblocks - nblocks_done;
         }
-        const uint8_t* codes_ptr = codes + (chunk * codes_chunk_stride);
+        const uint8_t* codes_ptr = codes + (chunk * codes_chunk_stride); //break X into smaller 'vertical' pieces
         OutType* out_ptr = dists_out + (chunk * out_chunk_stride);
         const uint8_t* lut_ptr = luts + (chunk * lut_chunk_stride);
 
         int nfullgroups_out = noutputs / OutTileSz;
         for (int g = 0; g < nfullgroups_out; g++) {
-            mithral_scan_T<UpcastEvery, OutTileSz, OutType>(
-               codes_ptr, use_nblocks, ncodebooks, lut_ptr, out_ptr, nblocks*block_nrows);
+            //mithral_scan_T<UpcastEvery, OutTileSz, OutType>( //OutTileSz is how many columns to write
+            //   codes_ptr, use_nblocks, ncodebooks, lut_ptr, out_ptr, out_col_stride);
             
-            //// works with zipped values
-            //auto n = out_col_stride; //4096
-            //mithral_scan_test_zipped(codes_ptr, n, ncodebooks, OutTileSz,
-            //       0, 1,
-            //       lut_ptr, reinterpret_cast<uint16_t*>(out_ptr));
+            // works with zipped values
+            auto n = out_col_stride; //4096
+            mithral_scan_test_zipped(codes_ptr, n, ncodebooks, OutTileSz,
+                   0, 1,
+                   lut_ptr, reinterpret_cast<uint16_t*>(out_ptr));
     
             //We're iterating over columns of output, and rows of Luts
             out_ptr += out_col_stride * OutTileSz;
