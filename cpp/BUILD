@@ -16,10 +16,10 @@ defines_debug = ['BLAZE']
 copts_fast = ['-O3', '-march=native', '-mavx', '-ffast-math', '-std=c++14']
 defines_fast = ['BLAZE', 'NDEBUG']
 
-copts = copts_debug
-defines = defines_debug 
-#copts = copts_fast
-#defines = defines_fast
+#copts = copts_debug
+#defines = defines_debug 
+copts = copts_fast
+defines = defines_fast
 
 cc_binary(
     name = "hello_world",

@@ -28,9 +28,8 @@ from cpp import mithral_wrapped
 import functools
 print = functools.partial(print, flush=True)
 
-print(" Test pybind11 wrapped correctly")
 assert 5 == mithral_wrapped.add(2, 3)
-print("mithral ran")
+print("Pybind11 wrapped correctly")
 
 #So C++ code's printout redirected to python
 libc = ctypes.CDLL(None)
@@ -170,16 +169,19 @@ new_time = max(map(lambda r: min(r.trial_best_sec_times), int8_data)) #type of o
 #print(f'new (cpp) throughput {new_throughput:.2E} vs Old Throughput: {old_throughput:.2E}')
 
 #% Speed of Python C++ Bindings
-#N,D,M = 65536, 64,128 
-N,D,M = 4096, 64,128 
+N,D,M = 65536, 64,128 
+#N,D,M = 4096, 64,128 
 n,m=N,M
-ncodebooks=4
+ncodebooks=2
 task=mithral_wrapped.mithral_amm_task_float(N,D,M, ncodebooks, lutconsts)
 #easy debugging
 
 X= np.stack([np.array([i%16]*(D//2) + [(i%16) for j in range(D//2)]) for i in range(N)])
 Q= np.stack([np.array([i%16]*(M//2) + [16 + i%16]*(M//2)) for i in range(D)])
+#X[:,:16]*=32 #1-R^2 for cpp: 0.33; Python version: 0.12 only when multiply 1st subspace by 32 no negative changes
 X[:,::3]*=-1
+#X[:,::2]*=-1 #If I do all 3 of these then 1-R^2=0.11 on both Py and CPP
+#X*=-1 
 #X=X+np.random.randint(0,10,[N,D])/3 /1 R^2<0, /3 R^2=0.95, /10 R^2=0.98
 #Q=Q+np.random.randint(0,10,[D,M])/3
 #X=X.astype(float)/10
@@ -193,7 +195,7 @@ task.Q=Q
 
 Y_hat1=np.array(task.output().data)
 s=timer()
-task.run_matmul(True)
+task.run_matmul(True) 
 #.output() Returns a memoryview of type ColMatrix which is Eigen::Matrix<T, Eigen::Dynamic, 1>;
 Y_hat=np.asarray(task.output().data)
 e=timer()
@@ -377,26 +379,16 @@ def copy_python_to_amm(py_est, amm):
   #segfaults when py_est is changed; but I should be able to delete?
   #del py_est 
 
-#task.amm.codes=est.A_enc
-#task.amm.luts = est.luts.reshape(est.luts.shape[0],-1)
-print('first 64 luts\n', np.ravel( est.luts.reshape(est.luts.shape[0],-1), order='c')[:64])
-print('first 32 codes in each column when unzipped (from tmp)')
-print(np.ravel( task.amm.tmp_codes, order='f')[:32])
-print(np.ravel( task.amm.tmp_codes, order='f')[4096:4096+32])
-print(np.ravel( task.amm.tmp_codes, order='f')[2*4096:2*4096+32])
-print(np.ravel( task.amm.tmp_codes, order='f')[3*4096:3*4096+32])
-print("first 32 codes in each column zipped")
-print(np.ravel( task.amm.codes, order='f')[:32])
-print(np.ravel( task.amm.codes, order='f')[4096:4096+32])
-
 #%%  Copy Python Params to C++, which creates luts/codes and generates Y_hat
 print(f"starting:      copying {os.getpid()}")
 copy_python_to_amm(est, task.amm)
 task.amm.out_mat = np.zeros(task.amm.out_mat.shape)
+print("succesful copy")
 s=timer()
 task.run_matmul(True)
-#Y_hat=(task.amm.out_mat*ncodebooks/task.amm.out_scale) + task.amm.out_offset_sum #by avg
-Y_hat=(task.amm.out_mat/task.amm.out_scale) + task.amm.out_offset_sum #by sum
+# If use uint8 Mithral Output then need to cast away first, else could multiply a uint8 and wrap it
+Y_hat=(task.amm.out_mat.astype(np.uint16)*ncodebooks/task.amm.out_scale) + task.amm.out_offset_sum #by avg
+#Y_hat=(task.amm.out_mat/task.amm.out_scale) + task.amm.out_offset_sum #by sum
 #Y_hat=task.amm.out_mat
 e=timer()
 num_dists=Y_hat.size
@@ -405,6 +397,9 @@ print(f'C++ {old_t/(e-s)} times faster; new time {e-s} vs old time {old_t}')
 print(f'time to run mithral with python bindings: {e-s:.7f}s',
       f'Throughput: {num_dists/(e-s):.2E}/sec',
       f'Python Throughtput {old_throughput:.2E}')
+
+#print(np.unique(task.amm.out_mat),
+#      np.unique(((Y-task.amm.out_offset_sum)*task.amm.out_scale).astype(int)))
 
 #%%  Debug Functions
 #compare dists function to make sure copied to c++ correctly
@@ -526,7 +521,6 @@ e=timer()
 print("Real Scan 1-R^2: ",1-r2_score(Y, Y_hat))
 print(f"C++ Wrapped Mithral times faster than Python Matrix Mult: {old_t/(e-s)}")
 
-
 #%%   
 ### Scrap ###
 ### Scrap ###
@@ -566,31 +560,31 @@ def _test_copying_over(iter_X,iter_Q, msg=''):
 
 def _make_rand_neg(M):
   m=np.copy(M)
-  if False:# np.random.rand()  > 0.5:
-    every=1 #np.random.randint(1,5)
-    m[::every,:]*=-1
-    print('every', every)
   if True: #np.random.rand()  > 0.5:
-    every=3 #np.random.randint(1,5)
+    every=np.random.randint(1,5)
+    m[::every,:]*=-1
+    print('every row', every)
+  if True: #np.random.rand()  > 0.5:
+    every=np.random.randint(1,5)
     m[:,::every]*=-1
-    print('every', every)
+    print('every col', every)
   return m
 
 def _make_book_bigger(M):
-  m=np.copy(M)
-  c = 0 #np.random.randint(ncodebooks)
+  m=np.copy(M) 
+  c = np.random.randint(ncodebooks)
   #not perfect v Y when >=16
-  sz= 2**4 #(np.random.randint(4,7))
+  sz= 2**(np.random.randint(4,7))
   m[:, c*16:(c+1)*16] *= sz 
   m[c*16:(c+1)*16,:] *= sz 
+  print('size: ', sz, ' codebook: ', c)
   return m
 
-num_trials=1
+num_trials=2
 results=[]
-if True:
+if False:
   #Compare C++ and Python give similar Y_hat on random Data
   #(They don't)
-  #old_x, old_q = map(np.copy, (X,Q))
   print("#####################\n\nrandom floats in 0-1")
   iter_X=(np.random.random_sample(X.shape) for _ in range(num_trials))
   iter_Q=(np.random.random_sample(Q.shape) for _ in range(num_trials))
@@ -601,18 +595,21 @@ if True:
   iter_Q=(np.random.random_sample(Q.shape)*20 -10 for _ in range(num_trials))
   results+=[_test_copying_over(iter_X,iter_Q, "Random data so expect to do badly vs Y")]
   
+num_trials=5
+if True: 
   print("#####################\n\n One codebook a lot bigger")
   iter_X=(X for _ in range(num_trials))
   iter_Q=(_make_book_bigger(Q) for _ in range(num_trials))
   results+=[_test_copying_over(iter_X,iter_Q, "Ordered so do good vs Y")]
-if True: 
+  
   print("#####################\n\nOrdered Ints with Some negative")
   iter_X=(_make_rand_neg(X) for _ in range(num_trials))
   iter_Q=(Q for _ in range(num_trials))
   results+=[_test_copying_over(iter_X,iter_Q, "Ordered so do good vs Y")]
   
   
-print(results)
+print(list(map(itemgetter(0,1), results)))
+print(list(map(itemgetter(2), results)))
 #%%
 # #Restore
 X,Q=old_x,old_q
@@ -647,21 +644,21 @@ plt.legend()
 
 #%% #Python matches C++ with random codes/luts (C++ overflows?)
 task.amm.out_mat =np.zeros(Y.shape)
-#task.amm.codes=np.random.randint(0, high=16, size=task.amm.codes.size).reshape(task.amm.codes.shape).astype(np.uint8)
-#task.amm.luts = 50*np.random.randint(1, high=30, size=task.amm.luts.size).reshape(task.amm.luts.shape).astype(np.uint8)
-l = np.zeros(task.amm.luts.shape)
-for i in range(ncodebooks):
-  #l[:,i*16+1]=[1]*(M//2) + [9]*(M//2) #np.random.randint(2, size=M)
-  #l[:,i*16+1]=[i]*(M//2) + [i*4]*(M//2) #np.random.randint(2, size=M)
-  if i %2:
-    l[:,i*16:(i+1)*16] = np.arange(16)
-  else:
-    l[:,i*16:(i+1)*16] = -1*np.arange(15,-1,-1)
+task.amm.codes=np.random.randint(0, high=16, size=task.amm.codes.size).reshape(task.amm.codes.shape).astype(np.uint8)
+task.amm.luts = 50*np.random.randint(1, high=30, size=task.amm.luts.size).reshape(task.amm.luts.shape).astype(np.uint8)
+#l = np.zeros(task.amm.luts.shape)
+#for i in range(ncodebooks):
+#  #l[:,i*16+1]=[1]*(M//2) + [9]*(M//2) #np.random.randint(2, size=M)
+#  #l[:,i*16+1]=[i]*(M//2) + [i*4]*(M//2) #np.random.randint(2, size=M)
+#  if i %2:
+#    l[:,i*16:(i+1)*16] = np.arange(16)
+#  else:
+#    l[:,i*16:(i+1)*16] = -1*np.arange(15,-1,-1)
 #l[:,1]= 40*np.random.randint(4, high=6, size=task.amm.luts.shape[0])
 #l[:,0]=[1]*(M//2) + [9]*(M//2) #np.random.randint(2, size=M)
 #l[:,17]=np.random.randint(2, size=M)
-task.amm.luts = l
-task.amm.codes = np.array([i  for j in range(N) for i in range(ncodebooks)]).reshape(task.amm.codes.shape)
+#task.amm.luts = l
+#task.amm.codes = np.array([i  for j in range(N) for i in range(ncodebooks)]).reshape(task.amm.codes.shape)
 #task.amm.codes=np.ones(task.amm.codes.shape).astype(np.uint8) 
 #task.amm.luts = np.ones(task.amm.luts.shape).astype(np.uint8) *9
 task.amm.out_scale=1
@@ -688,8 +685,8 @@ plt.hist(Y_hat_py.flatten(),bins=30,label='Y_hat_py', alpha=0.5)
 plt.legend()
 plt.show()
 
-print('py unique vals:', np.sort(np.unique(Y_hat_py)))
-print('C++ unique vals:',np.sort(np.unique(Y_hat_cpp)))
+print('py unique vals:', len(np.sort(np.unique(Y_hat_py))))
+print('C++ unique vals:',len(np.sort(np.unique(Y_hat_cpp))))
 #print(np.sort(np.unique(task.amm.luts[:,1] + task.amm.luts[:,17]))/task.amm.out_scale + task.amm.out_offset_sum)
 
 
@@ -702,6 +699,24 @@ task.scan()
 #Y_hat_cpp=(task.output()*ncodebooks/task.amm.out_scale) + task.amm.out_offset_sum #use original mithral scan
 Y_hat_cpp=(task.output()/task.amm.out_scale) + task.amm.out_offset_sum #use original mithral scan
 print(Y_hat_cpp)
+
+#%% see what's different
+l=est.luts.reshape(est.luts.shape[0],-1)
+for i in range(ncodebooks):
+  print(i, 'luts', np.sum(l[:,i*16:(i+1)*16]==task.amm.luts[:,i*16:(i+1)*16]))
+  print(i, 'codes', np.sum(est.A_enc[:,i]-i*16==task.amm.codes[:,i]))
+
+#task.amm.codes=est.A_enc
+#task.amm.luts = est.luts.reshape(est.luts.shape[0],-1)
+print('first 64 luts\n', np.ravel( est.luts.reshape(est.luts.shape[0],-1), order='c')[:64])
+print('first 32 codes in each column when unzipped (from tmp)')
+print(np.ravel( task.amm.tmp_codes, order='f')[:32])
+print(np.ravel( task.amm.tmp_codes, order='f')[4096:4096+32])
+print(np.ravel( task.amm.tmp_codes, order='f')[2*4096:2*4096+32])
+print(np.ravel( task.amm.tmp_codes, order='f')[3*4096:3*4096+32])
+print("first 32 codes in each column zipped")
+print(np.ravel( task.amm.codes, order='f')[:32])
+print(np.ravel( task.amm.codes, order='f')[4096:4096+32])
 
 #%% Runs without segfaulting
 Y_hat=est(X,Q)

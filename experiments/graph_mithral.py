@@ -115,86 +115,90 @@ MetricsSoftmax = namedtuple("MetricsSoftmax", ["np_time", "py_fit_time", "py_est
 
 #Run on last layers of NN
 results=[]
-ncodebooks=4 #2 c++ and Py match, 4 is bad (because of the extra, unneeded, averaging)?
-#So then how do we increase capacity of c++ version?
+ncodebooks=2
+NREPS=10
 print(f"ncodebooks={ncodebooks}")
 for datas in data_sources:
   for data in datas:
-    #o=compute_metrics_train(data, ncodebooks=ncodebooks)
-    [W_test,W_train, X_test, X_train, Y_test, Y_train] = attrgetter('W_test','W_train', 'X_test', 'X_train', 'Y_test', 'Y_train')(data)
-    #Mithral C++ doesn't work with counts not aligned to 32
-    Y_test=Y_test[:8192]
-    X_test=X_test[:8192]
-    lutconsts=-1
-    t = time.perf_counter()
-    Y=X_test@W_test
-    np_time=time.perf_counter() - t
-    #mse=np.mean((np.abs(np.ravel(Y) - np.ravel(Y_test)))**2)
-    #assert mse < 0.001*Y.size, mse
-    max_ix=np.apply_along_axis(np.argmax, 1, Y_test)
-    
-    hparams_dict = {'ncodebooks': ncodebooks, 'lut_work_const': lutconsts}
-    est = vq_amm.MithralMatmul(**hparams_dict)
-    t = time.perf_counter()
-    est.fit(X_train,W_train)
-    py_fit_time=time.perf_counter() - t
+    for _ in range(NREPS):
+      #o=compute_metrics_train(data, ncodebooks=ncodebooks)
+      [W_test,W_train, X_test, X_train, Y_test, Y_train] = attrgetter('W_test','W_train', 'X_test', 'X_train', 'Y_test', 'Y_train')(data)
+      #Mithral C++ doesn't work with counts not aligned to 32
+      align32=len(Y_test)-(len(Y_test)%32)
+      Y_test=Y_test[:align32]
+      X_test=X_test[:align32]
+      lutconsts=-1
+      t = time.perf_counter()
+      Y=X_test@W_test
+      np_time=time.perf_counter() - t
+      #mse=np.mean((np.abs(np.ravel(Y) - np.ravel(Y_test)))**2)
+      #assert mse < 0.001*Y.size, mse
+      max_ix=np.apply_along_axis(np.argmax, 1, Y_test)
+      
+      hparams_dict = {'ncodebooks': ncodebooks, 'lut_work_const': lutconsts}
+      est = vq_amm.MithralMatmul(**hparams_dict)
+      t = time.perf_counter()
+      est.fit(X_train,W_train)
+      py_fit_time=time.perf_counter() - t
  
-    t = time.perf_counter()
-    Y_hat1 = est.predict(X_test, W_test)
-    py_est_time=time.perf_counter() - t
-    py_est_r2 = r2_score(Y,Y_hat1)
-    py_max_ix=np.apply_along_axis(np.argmax, 1, Y_hat1)
-    py_est_per_ix_kept=np.sum(py_max_ix==max_ix)/py_max_ix.size
-     
-    task=mithral_wrapped.mithral_amm_task_float(*X_test.shape,W_test.shape[1], ncodebooks, lutconsts)
-    task.amm.out_mat = np.zeros(task.amm.out_mat.shape)
-    t = time.perf_counter()
-    task.X=X_test
-    task.Q=W_test
-    copy_python_to_amm(est, task.amm)
-    copy_to_cpp_time=time.perf_counter() - t
+      t = time.perf_counter()
+      Y_hat1 = est.predict(X_test, W_test)
+      py_est_time=time.perf_counter() - t
+      py_est_r2 = r2_score(Y,Y_hat1)
+      py_max_ix=np.apply_along_axis(np.argmax, 1, Y_hat1)
+      py_est_per_ix_kept=np.sum(py_max_ix==max_ix)/py_max_ix.size
+       
+      task=mithral_wrapped.mithral_amm_task_float(*X_test.shape,W_test.shape[1], ncodebooks, lutconsts)
+      task.amm.out_mat = np.zeros(task.amm.out_mat.shape)
+      t = time.perf_counter()
+      task.X=X_test
+      task.Q=W_test
+      copy_python_to_amm(est, task.amm)
+      copy_to_cpp_time=time.perf_counter() - t
  
-    t = time.perf_counter()
-    #task.mithral_encode_only()
-    #task.lut()
-    #task.amm.scan_test() #unzipped version, will Overflow
-    task.run_matmul(True)
-    #Y_hat2=task.amm.out_mat*0.06226/(task.amm.out_scale) + task.amm.out_offset_sum
-    Y_hat2=(task.amm.out_mat/task.amm.out_scale) + task.amm.out_offset_sum
-    #multiply by ncodebooks since out_mat is average of correct values
-    cpp_est_time=time.perf_counter() - t
-    cpp_est_r2=r2_score(Y, Y_hat2)
-    cpp_max_ix=np.apply_along_axis(np.argmax, 1, Y_hat2)
-    cpp_est_per_ix_kept=np.sum(cpp_max_ix==max_ix)/cpp_max_ix.size
-    o= MetricsSoftmax(np_time, py_fit_time, py_est_time, py_est_r2, py_est_per_ix_kept, copy_to_cpp_time, cpp_est_time, cpp_est_r2, cpp_est_per_ix_kept)
+      task.lut()
+      t = time.perf_counter()
+      task.run_matmul(False)
+      #task.run_matmul(True)
+      Y_hat2=task.amm.out_mat #Since we just care about relative order for predicting output
+      cpp_est_time=time.perf_counter() - t
+      Y_hat2=(Y_hat2.astype(np.uint16)*ncodebooks/task.amm.out_scale) + task.amm.out_offset_sum
+      cpp_est_r2=r2_score(Y, Y_hat2)
+      cpp_max_ix=np.apply_along_axis(np.argmax, 1, Y_hat2)
+      cpp_est_per_ix_kept=np.sum(cpp_max_ix==max_ix)/cpp_max_ix.size
+      o= MetricsSoftmax(np_time, py_fit_time, py_est_time, py_est_r2, py_est_per_ix_kept, copy_to_cpp_time, cpp_est_time, cpp_est_r2, cpp_est_per_ix_kept)
+      
+      results += [o]
     
-    results += [o]
-    
-for o in results:
-  print(attrgetter('np_time', 'py_est_r2', 'py_est_per_ix_kept', 'cpp_est_time', 'cpp_est_r2', 'cpp_est_per_ix_kept')(o))
+chunks = [results[i*NREPS:(i+1)*NREPS] for i in range(len(results) //NREPS)]
+for c in chunks:
+  print("\n##Start of new REPS##")
+  for o in c:
+    print(attrgetter('np_time', 'py_est_r2', 'py_est_per_ix_kept', 'cpp_est_time', 'cpp_est_r2', 'cpp_est_per_ix_kept')(o))
+
+min_np_times=list(map(lambda i: min(i, key=attrgetter('np_time')).np_time, chunks))
+min_mithral_times=list(map(lambda i: min(i, key=attrgetter('cpp_est_time')).cpp_est_time, chunks))
+print(f"Min Numpy Matrix mult times: {min_np_times}")
+print(f"Min Mithral times: {min_mithral_times}")
+print(f"Mithral times faster: {[i/j for i,j in zip(min_np_times, min_mithral_times)]}")
+
+
 #%%
 plt.title("Raw Y")
 plt.hist(Y_test.flatten(),bins=30,label='Y',alpha=0.3)
-plt.hist(Y_hat1.flatten(),bins=30,label='Y_hat1', alpha=0.3)
-plt.hist(Y_hat2.flatten(),bins=30,label='Y_hat2', alpha=0.3)
+plt.hist(Y_hat1.flatten(),bins=30,label='Y_hat1 (py)', alpha=0.3)
+plt.hist(Y_hat2.flatten(),bins=30,label='Y_hat2 (cpp)', alpha=0.3)
 plt.legend()
 plt.show()
 
 plt.title("Max Ix")
 plt.hist(max_ix,label='Y_ix',alpha=0.3)
-plt.hist(py_max_ix,label='Y_hat1_ix', alpha=0.3)
-plt.hist(cpp_max_ix,label='Y_hat2_ix', alpha=0.3)
+plt.hist(py_max_ix,label='Y_hat1_ix (py)', alpha=0.3)
+plt.hist(cpp_max_ix,label='Y_hat2_ix (cpp)', alpha=0.3)
 plt.legend()
 plt.show()
-#%%
-# Scrap see what's different
-l=est.luts.reshape(est.luts.shape[0],-1)
-for i in range(ncodebooks):
-  print(i, 'luts', np.sum(l[:,i*16:(i+1)*16]==task.amm.luts[:,i*16:(i+1)*16]))
-  print(i, 'codes', np.sum(est.A_enc[:,i]-i*16==task.amm.codes[:,i]))
 
 #%% Make Comparison Graphs 
-
 Metrics = namedtuple("Metrics", ["np_time", "py_fit_time", "py_est_time", "py_est_r2", "copy_to_cpp_time", "cpp_est_time", "cpp_est_r2"])
 
 def compute_metrics_no_train(N,D,M,ncodebooks,X,Q):
@@ -343,8 +347,8 @@ print(Z2)
 
 
 
-#%%
-N,D,M = 4096, 64,128 
+#%% Scrap
+N,D,M = 4096, 64,128  
 ncodebooks=2
 X= np.stack([np.array([i%16]*(D//2) + [(i%16) for j in range(D//2)]) for i in range(N)])
 Q= np.stack([np.array([i%16]*(M//2) + [16 + i%16]*(M//2)) for i in range(D)])

@@ -78,27 +78,6 @@ void mithral_scan_test(const uint8_t* codes, int N, int ncodebooks, int M,
   }
 }
 
-/* if zipped codes first 
-*/
-void mithral_scan_test_zipped(const uint8_t* codes, int n, int ncodebooks, int m,
-                       float offset, float scale,
-                       const uint8_t* luts, uint16_t* float_dists_out) 
-{ 
-  for (int i = 0; i < m; i++) {
-    const uint8_t* lut = luts + i * ncodebooks * 16;
-    for (int j = 0; j < n; j++) {
-      uint16_t dist = 0;
-      for (int code_ix = 0; code_ix < ncodebooks/2; code_ix ++) {
-        auto code_byte = codes[j + code_ix*n];
-        auto code0 = code_byte & 0x0F;
-        auto code1 = (code_byte >> 4) & 0x0F; 
-        dist += lut[code0 + 32*code_ix];
-        dist += lut[code1 + 32*code_ix + 16];
-      }
-      float_dists_out[i*n + j] = ((dist/scale) + offset);
-    }
-  }
-}
 // ================================================================ encode
 
 //The one that works
@@ -548,8 +527,7 @@ void mithral_lut_sparse(const float* Q, int nrows, int ncols, int ncodebooks,
     mithral_learn_lut_offsets_scales(tmp_lut_f32, nrows, ncodebooks,
         tmp_offsets, out_offset_sum, out_scale);
     //out_scale was 1.992 vs 0.998 exp, tmp_offsets 0s(?) //If you do -exec p/d out_scale you get 1 out, incorrect summary
-    volatile auto s = out_scale;
-    quantize_luts(tmp_lut_f32, nrows, ncodebooks, tmp_offsets, s, out);
+    quantize_luts(tmp_lut_f32, nrows, ncodebooks, tmp_offsets, out_scale, out);
 }
 
 // ================================================================ scan
