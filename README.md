@@ -16,7 +16,7 @@ EDIT2: Looking for a research project? See our [list of ideas](https://github.co
 
 EDIT3: See [Build.md](https://github.com/dblalock/bolt/blob/master/BUILD.md) for a working dockerfile that builds and runs Bolt, contributed by @mneilly.
 
-## An example Mithral implementation
+## An example Mithral implementation with Python Bindings
 ### Setup 
 ```
 sudo docker build .  -t $USER/extension-script:latest
@@ -40,7 +40,7 @@ cd ../experiments
 python graph_mithral.py
 ```
 
-### Python Bindings 
+### Python Binding Notes
 An example notebook showing speed up muliplications on the Cifar dataset is `experiments/graph_mithral.py`.  See `experiments/README.md` for installing datasets.
 
 The C++ code does not learned Hyperparameters, (split index, split value, centroids, etc). The Python code does. Using Pybind11 we copy over parameters, then encode both X and Q inside C++, do the multiplication, and write to a memory view Pybind11 can access. Mithral keeps the reconstructed ordering better than magnitudes; the Cifar numbers are based on using Mithral for only the last layer, it is 10-15x faster with answers changed 4% of the time for Cifar-10 with 2 codebooks, or 17-20x faster and 0.2% wrong on training data.
