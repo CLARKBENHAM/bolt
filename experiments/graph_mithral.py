@@ -1,4 +1,5 @@
 #%% A pretty version of mithral speed tests, with graphs
+# Meant to be run as notebook; run from bolt/experiments directory if as script
 
 import re
 import os
@@ -52,17 +53,14 @@ def extract_py_vars(est):
                      ]
   default_sz = max(map(len, raw_splitvals))
   ## i idx is 2^{i-1} value can split nodes for all the ncodebook subspaces
-  #C++ expects 0 padded values out to 16 per BST of split values
-  #in C++ uses (ncodebooks, 32) if row major accesses
-  # iterate over the 32 for a given codebook
-  # [v1,v2,v2,v3,v3,v3,v3,v4,v4,v4,v4,v4,v4,v4,v4]
+  #C++ expects 0 padded values out to 16 per BST of split values, on 1 indexed array
+  # [0,v1,v2,v2,v3,v3,v3,v3,v4,v4,v4,v4,v4,v4,v4,v4]
   # (nsplits, [1,2,4,8]) 
-  #but insert 0 to pad to 16 with 1 indexed array
   
   raw_splitvals_padded=np.array([np.pad(l, (1,0))
             for l in raw_splitvals
             ])
-  #Python: (X-offset) * scale; C++: X*scale + offset; before comparing to these splitvals
+  #Python Computes: (X-offset) * scale; C++ Computes: X*scale + offset; before comparing to these splitvals need to adjust
   #WARN: these can overflow sometimes from int8 
   splitvals=(raw_splitvals_padded-128).clip(-128,127).astype(np.int8)
   
@@ -98,17 +96,15 @@ def copy_python_to_amm(py_est, amm):
   amm.out_scale  = oscale
   #amm.setIdxs(.astype(int)) #only for non-dense
   
-  #assert np.all(amm.getCentroids() == c) #shape wrong, return differently?
+  #assert np.all(amm.getCentroids() == c) #shape wrong
   assert np.all(np.ravel(amm.getCentroids()) == np.ravel(c)) 
   assert np.all(amm.getSplitdims() == d)
   #assert np.all(amm.getSplitvals() == v)
   assert np.all(amm.getEncode_scales()==es)
   assert np.all(amm.getEncode_offsets() == eo)
    
-  #segfaults when py_est is changed; but I should be able to delete?
-  #del py_est 
+  #del py_est  #to confirm pybind doesn't depend on python memory
 
-#all_tasks=
 data_sources = [md.load_cifar10_tasks(), md.load_cifar100_tasks()]
 #%%
 MetricsSoftmax = namedtuple("MetricsSoftmax", ["np_time", "py_fit_time", "py_est_time", "py_est_r2", "py_est_per_ix_kept", "copy_to_cpp_time", "cpp_est_time", "cpp_est_r2", "cpp_est_per_ix_kept"])
@@ -121,7 +117,6 @@ print(f"ncodebooks={ncodebooks}")
 for datas in data_sources:
   for data in datas:
     for _ in range(NREPS):
-      #o=compute_metrics_train(data, ncodebooks=ncodebooks)
       [W_test,W_train, X_test, X_train, Y_test, Y_train] = attrgetter('W_test','W_train', 'X_test', 'X_train', 'Y_test', 'Y_train')(data)
       #Mithral C++ doesn't work with counts not aligned to 32
       align32=len(Y_test)-(len(Y_test)%32)
@@ -155,11 +150,13 @@ for datas in data_sources:
       task.Q=W_test
       copy_python_to_amm(est, task.amm)
       copy_to_cpp_time=time.perf_counter() - t
- 
-      task.lut()
+
+      task.X=X_train[:len(X_test)]
+      task.lut()#use X known at train time
+      task.X =X_test
       t = time.perf_counter()
       task.run_matmul(False)
-      #task.run_matmul(True)
+      #task.run_matmul(True) #Encodes test X as centroids instead of using train_x's centroids
       Y_hat2=task.amm.out_mat #Since we just care about relative order for predicting output
       cpp_est_time=time.perf_counter() - t
       Y_hat2=(Y_hat2.astype(np.uint16)*ncodebooks/task.amm.out_scale) + task.amm.out_offset_sum
@@ -173,11 +170,14 @@ for datas in data_sources:
 chunks = [results[i*NREPS:(i+1)*NREPS] for i in range(len(results) //NREPS)]
 for c in chunks:
   print("\n##Start of new REPS##")
+  attr=['np_time', 'py_est_r2', 'py_est_per_ix_kept', 'cpp_est_time', 'cpp_est_r2', 'cpp_est_per_ix_kept']
+  print(attr)
   for o in c:
-    print(attrgetter('np_time', 'py_est_r2', 'py_est_per_ix_kept', 'cpp_est_time', 'cpp_est_r2', 'cpp_est_per_ix_kept')(o))
+    print(attrgetter(*attr)(o))
 
 min_np_times=list(map(lambda i: min(i, key=attrgetter('np_time')).np_time, chunks))
 min_mithral_times=list(map(lambda i: min(i, key=attrgetter('cpp_est_time')).cpp_est_time, chunks))
+print(f"ncodebooks={ncodebooks}")
 print(f"Min Numpy Matrix mult times: {min_np_times}")
 print(f"Min Mithral times: {min_mithral_times}")
 print(f"Mithral times faster: {[i/j for i,j in zip(min_np_times, min_mithral_times)]}")

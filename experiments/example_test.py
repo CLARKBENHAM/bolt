@@ -522,9 +522,7 @@ print("Real Scan 1-R^2: ",1-r2_score(Y, Y_hat))
 print(f"C++ Wrapped Mithral times faster than Python Matrix Mult: {old_t/(e-s)}")
 
 #%%   
-### Scrap ###
-### Scrap ###
-### Scrap ###
+### Tests ###
 
 old_x,old_q=map(np.copy, (X,Q))
 
@@ -622,6 +620,9 @@ task.Q=Q
 task.scan()
 
 #%%
+### Scrap ###
+### Scrap ###
+
 #With random X,Q and copied python params c++ makes the right codes and luts
 copy_python_to_amm(est, task.amm)
 task.mithral_encode_only()

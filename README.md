@@ -16,11 +16,53 @@ EDIT2: Looking for a research project? See our [list of ideas](https://github.co
 
 EDIT3: See [Build.md](https://github.com/dblalock/bolt/blob/master/BUILD.md) for a working dockerfile that builds and runs Bolt, contributed by @mneilly.
 
+## An example Mithral implementation
+### Setup 
+```
+sudo docker build .  -t $USER/extension-script:latest
+sudo docker run -v /home/$USER/:/home/$USER --rm --cap-add=SYS_PTRACE --security-opt seccomp=unconfined -dit $USER/extension-script:latest
+# -v   to share local files
+# --rm --cap-add=SYS_PTRACE --security-opt seccomp=unconfined   to allow debuging
+
+#With VScode, running as notebook
+Locally inside VScode Docker tab right click and  "Attach Visual Studio Code" 
+  Inside container open from the local folder, bolt (NOT devcontainer/code workspace etc)
+  If you built remotely you'll want to add that docker context to local machine
+Now you can run the "build_bazel_mithral_dbg" task; the config is in .vscode/launch (can make a shortcut)
+And connect C++ code to python code debugger with the debug config "Mithral Debug Attach gdb to py proc"; config in .vscode/launch.json
+
+#As script
+sudo docker exec -it $CONTAINER_ID bash
+cd cpp 
+bazel build :mithral_wrapped --strip=never  #--strip=never for debuging, current build options are for prod, line 21
+#Install cifar datasets
+cd ../experiments
+python graph_mithral.py
+```
+
+### Python Bindings 
+An example notebook showing speed up muliplications on the Cifar dataset is `experiments/graph_mithral.py`.  See `experiments/README.md` for installing datasets.
+
+The C++ code does not learned Hyperparameters, (split index, split value, centroids, etc). The Python code does. Using Pybind11 we copy over parameters, then encode both X and Q inside C++, do the multiplication, and write to a memory view Pybind11 can access. Mithral keeps the reconstructed ordering better than magnitudes; the Cifar numbers are based on using Mithral for only the last layer, it is 10-15x faster with answers changed 4% of the time for Cifar-10 with 2 codebooks, or 17-20x faster and 0.2% wrong on training data.
+
+The main C++ files:
+cpp/src/quantize: mithral.hhp, mithral.cpp, profile_amm.hpp #Mithral implementation
+cpp/mithral_wrapped.cpp #binding code
+
+Current binding uses floats for scales and offsets, lower precision may work better. 
+mithral.hhp: mithral_input_type_traits<float>.output_type; //uint8 or unint16 both work
+
+mithral_scan_test_zipped can run by itself and is a simpler/unoptimized version of mithral_scan:1243.
+
+
+
 **NOTE: All below code refers to the Python wrapper for Bolt and has nothing to do with MADDNESS.** It also seems to be [no longer building](https://github.com/dblalock/bolt/issues/4) for many people. If you want to use MADDNESS, see the [Python Implementation](https://github.com/dblalock/bolt/blob/45454e6cfbc9300a43da6770abf9715674b47a0f/experiments/python/vq_amm.py#L273) driven by [amm_main.py](https://github.com/dblalock/bolt/blob/45454e6cfbc9300a43da6770abf9715674b47a0f/experiments/python/amm_main.py) or [C++ implementation](https://github.com/dblalock/bolt/blob/45454e6cfbc9300a43da6770abf9715674b47a0f/cpp/src/quantize/mithral.cpp). All code is ugly, but Python code should be pretty easy to add new AMM methods/variations to.
 
 <!-- NOTE: All the code, documentation, and results associated with Bolt's KDD paper can be found in the `experiments/` directory. See the README therein for details. A cleaned-up version of the paper is available [here](https://github.com/dblalock/bolt/blob/master/assets/bolt.pdf?raw=true). -->
 
 ## Installing
+
+### Docker Image
 
 #### Python
 
@@ -47,8 +89,6 @@ The `bazel run` command will build the project and run the tests and benchmarks.
 If you want to integrate Bolt with another C++ project, include `cpp/src/include/public.hpp` and add the remaining files under `cpp/src` to your builds. You should let me know if you're interested in doing such an integration because I'm hoping to see Bolt become part of many libraries and thus would be happy to help you. <!-- Note that the `BoltEncoder` object you'll interact with presently needs something else to feed it k-means centroids-see `python/bolt/bolt_api.py` for an example. -->
 
 
-### CLARK 
-run python from experiments$ python example_test.py 
 #### Notes
 
 Bolt currently only supports machines with [AVX2 instructions](https://en.wikipedia.org/wiki/Advanced_Vector_Extensions#Advanced_Vector_Extensions_2), which basically means x86 machines from fall 2013 or later. Contributions for ARM support [are welcome](https://github.com/dblalock/bolt/issues/2). Also note that the Bolt Python wrapper is currently configured to require Clang, since GCC apparently [runs into issues](https://github.com/dblalock/bolt/issues/4).
