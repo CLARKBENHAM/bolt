@@ -105,6 +105,15 @@ def copy_python_to_amm(py_est, amm):
    
   #del py_est  #to confirm pybind doesn't depend on python memory
 
+def copy_python_luts(est, amm):
+  """These aren't really hyperparams in that if Q changes 
+  may or may not be efficent to re-compute luts.
+  Re-creating luts is quick and uses test version. Not much accuracy difference"""
+  luts = np.array([np.ravel(est.luts[i], order='C') 
+                   for i in range(len(est.luts))],
+                  dtype=np.uint8) 
+  amm.luts = luts
+  
 data_sources = [md.load_cifar10_tasks(), md.load_cifar100_tasks()]
 #%%
 MetricsSoftmax = namedtuple("MetricsSoftmax", ["np_time", "py_fit_time", "py_est_time", "py_est_r2", "py_est_per_ix_kept", "copy_to_cpp_time", "cpp_est_time", "cpp_est_r2", "cpp_est_per_ix_kept"])
@@ -151,9 +160,8 @@ for datas in data_sources:
       copy_python_to_amm(est, task.amm)
       copy_to_cpp_time=time.perf_counter() - t
 
-      task.X=X_train[:len(X_test)]
-      task.lut()#use X known at train time
-      task.X =X_test
+      #task.lut()
+      copy_python_luts(est, task.amm)
       t = time.perf_counter()
       task.run_matmul(False)
       #task.run_matmul(True) #Encodes test X as centroids instead of using train_x's centroids
