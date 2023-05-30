@@ -108,7 +108,8 @@ def copy_python_to_amm(py_est, amm):
 def copy_python_luts(est, amm):
   """These aren't really hyperparams in that if Q changes 
   may or may not be efficent to re-compute luts.
-  Re-creating luts is quick and uses test version. Not much accuracy difference"""
+  Re-creating luts is quick and uses test version. Not much accuracy difference
+  Don't expect Q, therefore luts, to change"""
   luts = np.array([np.ravel(est.luts[i], order='C') 
                    for i in range(len(est.luts))],
                   dtype=np.uint8) 

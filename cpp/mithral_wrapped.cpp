@@ -265,7 +265,7 @@ PYBIND11_MODULE(mithral_wrapped, m) {
         .def("setIdxs", [](mithral_amm<float> &self , py::array_t<int, py::array::c_style>& mf) {
             //py::array_t<int> t=py::array_t<int>(mf);
             //delete self.idxs;
-            self.idxs =const_cast<const int*>(mf.data());
+            self.idxs = const_cast<const int*>(mf.data()); 
         })
         //// // Doesn't work to prevent segfaults. Is it cause I'm not copying over the right data?
         //// Since these are pointers to const data can't overwrite existing, have to point to entierly new object causing memleak
