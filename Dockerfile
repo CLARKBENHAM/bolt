@@ -1,5 +1,5 @@
 #Based on pytorch extension script dockerfile: https://github.com/pytorch/extension-script
-FROM ubuntu:20:04
+FROM ubuntu:20.04
 
 RUN apt-get update  -y \
   && apt-get install -y \
@@ -34,8 +34,6 @@ RUN . /activate && \
 RUN wget https://download.pytorch.org/libtorch/cpu/libtorch-cxx11-abi-shared-with-deps-2.0.1%2Bcpu.zip && \
 		unzip libtorch-cxx11-abi-shared-with-deps-latest.zip &&  \
 		rm libtorch-cxx11-abi-shared-with-deps-latest.zip
-
-###########################Clark Added Below
 
 ###%% Things added to get Bolt working; based on: https://github.com/dblalock/bolt/blob/master/BUILD.md
 RUN apt-get install \
