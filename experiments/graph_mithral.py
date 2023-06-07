@@ -159,10 +159,12 @@ for datas in data_sources:
       task.X=X_test
       task.Q=W_test
       copy_python_to_amm(est, task.amm)
+      copy_python_luts(est, task.amm) # Or can make luts in C++
       copy_to_cpp_time=time.perf_counter() - t
 
-      #task.lut()
-      copy_python_luts(est, task.amm)
+      #task.X=X_train[:len(X_test)]
+      #task.lut()#use X known at train time
+      #task.X =X_test
       t = time.perf_counter()
       task.run_matmul(False)
       #task.run_matmul(True) #Encodes test X as centroids instead of using train_x's centroids
