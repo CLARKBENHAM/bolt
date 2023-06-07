@@ -1,5 +1,5 @@
 #Based on pytorch extension script dockerfile: https://github.com/pytorch/extension-script
-FROM ubuntu:xenial
+FROM ubuntu:20:04
 
 RUN apt-get update  -y \
   && apt-get install -y \
@@ -27,17 +27,19 @@ RUN ln -s ~/local/miniconda/bin/activate /activate
 ENV PATH=$PATH:/root/local/miniconda/bin/  
 # Install PyTorch
 RUN . /activate && \
-	#Change python to 3.7
-	conda install python=3.7 && \
-  	conda install  -c pytorch-nightly cpuonly && \
-  	conda install  -c pytorch-nightly pytorch  && \
-	conda init bash 
+	conda install python=3.8 && \
+	conda install pytorch torchvision torchaudio cpuonly -c pytorch
+
+#  	conda install  -c pytorch-nightly cpuonly && \
+#  	conda install  -c pytorch-nightly pytorch  && \ 
+#	conda init bash 
 
 # Download LibTorch # why used Pre-cxx11 ABI before?
 #RUN wget https://download.pytorch.org/libtorch/nightly/cpu/libtorch-shared-with-deps-latest.zip
 #RUN unzip libtorch-shared-with-deps-latest.zip && rm libtorch-shared-with-deps-latest.zip
-RUN wget https://download.pytorch.org/libtorch/nightly/cpu/libtorch-cxx11-abi-shared-with-deps-latest.zip
-RUN unzip libtorch-cxx11-abi-shared-with-deps-latest.zip && rm libtorch-cxx11-abi-shared-with-deps-latest.zip
+RUN wget https://download.pytorch.org/libtorch/nightly/cpu/libtorch-cxx11-abi-shared-with-deps-latest.zip && \
+		unzip libtorch-cxx11-abi-shared-with-deps-latest.zip &&  \
+		rm libtorch-cxx11-abi-shared-with-deps-latest.zip
 
 ###########################Clark Added Below
 
@@ -57,6 +59,11 @@ RUN apt-get install \
 	sudo \
 	&& curl -s https://packagecloud.io/install/repositories/github/git-lfs/script.deb.sh | sudo bash \
 	&& apt-get install  git-lfs
+
+# Added; but tutorial uses 5.4 
+RUN sudo add-apt-repository ppa:ubuntu-toolchain-r/test && \
+	sudo apt-get update && \
+	sudo apt-get install gcc-7 g++-7 gcc-9 g++-9
 
 
 #Need to install Bazel for build
