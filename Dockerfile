@@ -30,14 +30,8 @@ RUN . /activate && \
 	conda install python=3.8 && \
 	conda install pytorch torchvision torchaudio cpuonly -c pytorch
 
-#  	conda install  -c pytorch-nightly cpuonly && \
-#  	conda install  -c pytorch-nightly pytorch  && \ 
-#	conda init bash 
-
 # Download LibTorch # why used Pre-cxx11 ABI before?
-#RUN wget https://download.pytorch.org/libtorch/nightly/cpu/libtorch-shared-with-deps-latest.zip
-#RUN unzip libtorch-shared-with-deps-latest.zip && rm libtorch-shared-with-deps-latest.zip
-RUN wget https://download.pytorch.org/libtorch/nightly/cpu/libtorch-cxx11-abi-shared-with-deps-latest.zip && \
+RUN wget https://download.pytorch.org/libtorch/cpu/libtorch-cxx11-abi-shared-with-deps-2.0.1%2Bcpu.zip && \
 		unzip libtorch-cxx11-abi-shared-with-deps-latest.zip &&  \
 		rm libtorch-cxx11-abi-shared-with-deps-latest.zip
 
@@ -60,12 +54,6 @@ RUN apt-get install \
 	&& curl -s https://packagecloud.io/install/repositories/github/git-lfs/script.deb.sh | sudo bash \
 	&& apt-get install  git-lfs
 
-# Added; but tutorial uses 5.4 
-RUN sudo add-apt-repository ppa:ubuntu-toolchain-r/test && \
-	sudo apt-get update && \
-	sudo apt-get install gcc-7 g++-7 gcc-9 g++-9
-
-
 #Need to install Bazel for build
 RUN curl -fsSL https://bazel.build/bazel-release.pub.gpg | gpg --dearmor >bazel-archive-keyring.gpg \
 	&& sudo mv bazel-archive-keyring.gpg /usr/share/keyrings \
@@ -77,13 +65,13 @@ RUN curl -fsSL https://bazel.build/bazel-release.pub.gpg | gpg --dearmor >bazel-
 RUN  git clone https://github.com/pytorch/extension-script.git 
 # RUN git clone https://github.com/dblalock/bolt.git 
 
- # (Is this actually needed, already apt-installed?)
- # Untaring eigen-3.3.8 gives bad directory name by default, had to set to eigen-3.3.8
- RUN 	curl -L https://gitlab.com/libeigen/eigen/-/archive/3.3.8/eigen-3.3.8.tar > eigen-3.3.8.tar \
- 	&& mkdir eigen-3.3.8 && tar xf eigen-3.3.8.tar  -C eigen-3.3.8 --strip-components 1 \ 
+# (Is this actually needed, already apt-installed? Plus hardcoded in bolt)
+# Untaring gives bad directory name by default, had to explicitly set to eigen-3.4.0
+RUN	curl -L https://gitlab.com/libeigen/eigen/-/archive/3.4.0/eigen-3.4.0.tar > eigen-3.4.0.tar \
+ 	&& mkdir eigen-3.4.0 tar xf eigen-3.4.0.tar  -C eigen-3.4.0 --strip-components 1 \ 
  	&& mkdir -p build_dir_eigen \
 	&& cd build_dir_eigen \
- 	&& cmake ../eigen-3.3.8  \
+ 	&& cmake -DEIGEN_MAX_ALIGN_BYTES=32 ../eigen-3.4.0 \
  	&& make install
 
 #Bolt packages
