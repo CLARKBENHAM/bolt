@@ -45,12 +45,13 @@ RUN apt-get install \
 	apt-transport-https \
 	apt-utils \
 	build-essential \
-	clang-3.9 \
+	clang-11 \
 	clang \
 	curl \
 	gnupg \
 	libc++-dev \
 	libeigen3-dev \
+	python3-setuptools \
 	swig \
 	sudo \
 	&& curl -s https://packagecloud.io/install/repositories/github/git-lfs/script.deb.sh | sudo bash \
@@ -69,17 +70,30 @@ RUN  git clone https://github.com/pytorch/extension-script.git
 
 # (Is this actually needed, already apt-installed? Plus hardcoded in bolt)
 # Untaring gives bad directory name by default, had to explicitly set to eigen-3.4.0
-RUN	curl -L https://gitlab.com/libeigen/eigen/-/archive/3.4.0/eigen-3.4.0.tar > eigen-3.4.0.tar \
- 	&& mkdir eigen-3.4.0 tar xf eigen-3.4.0.tar  -C eigen-3.4.0 --strip-components 1 \ 
- 	&& mkdir -p build_dir_eigen \
-	&& cd build_dir_eigen \
- 	&& cmake -DEIGEN_MAX_ALIGN_BYTES=32 ../eigen-3.4.0 \
- 	&& make install
+#RUN	curl -L https://gitlab.com/libeigen/eigen/-/archive/3.4.0/eigen-3.4.0.tar > eigen-3.4.0.tar \
+# 	&& mkdir eigen-3.4.0 tar xf eigen-3.4.0.tar  -C eigen-3.4.0 --strip-components 1 \ 
+# 	&& mkdir -p build_dir_eigen \
+#	&& cd build_dir_eigen \
+# 	&& cmake -DEIGEN_MAX_ALIGN_BYTES=32 ../eigen-3.4.0 \
+# 	&& make install
+RUN curl -L https://gitlab.com/libeigen/eigen/-/archive/3.3.8/eigen-3.3.8.tar > eigen-3.3.8.tar \
+  && mkdir eigen-3.3.8 && tar xf eigen-3.3.8.tar  -C eigen-3.3.8 --strip-components 1 \ 
+  && mkdir -p build_dir_eigen \
+  && cd build_dir_eigen \
+  && cmake ../eigen-3.3.8  \
+	&& make install
 
 #Bolt packages
 WORKDIR /home/cbenham/bolt/
 COPY requirements.txt /home/cbenham/bolt/requirements.txt 
 RUN conda install --file requirements.txt 
+#install kmc2 
+RUN cd .. \
+	&& git clone -b mneilly/cythonize https://github.com/mneilly/kmc2.git \
+	&& cd kmc2 \
+	&& . /activate \
+	&& pip install .
+
 COPY . /home/cbenham/bolt
 
 ##Build Code with cmake, nessisary? Main code is bad right now
@@ -91,16 +105,12 @@ COPY . /home/cbenham/bolt
 #	#&& cd cpp/build-bolt \
 #	#&& ./bolt amm* 
 
-RUN . ~/.bashrc && cd cpp && bazel build :mithral_wrapped 
-# && bazel run :main
+# Do we even need setup.py since we're using bazel?
+# RUN  . /activate \
+# 	&& echo $PATH  \
+# 	&& python3 setup.py install \
+# 	&& pytest tests/ 
 
-#install kmc2 
-RUN cd .. \
-	&& git clone -b mneilly/cythonize https://github.com/mneilly/kmc2.git \
-	&& cd kmc2 \
-	&& . ~/.bashrc \
-	&& python setup.py install
-
-RUN  . ~/.bashrc \
-	&& python3 setup.py install \
-	&& pytest tests/ 
+# Check that it'll work
+RUN . /activate && cd cpp && bazel build :mithral_wrapped 
+# RUN . /activate && cd cpp && bazel build :main && bazel run :main 

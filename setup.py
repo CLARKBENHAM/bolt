@@ -63,11 +63,11 @@ if sys.platform == 'darwin':
     os.environ["CC"] = "g++"  # force compiling c as c++
 else:  # based on Issue #4
     if "CC" not in os.environ:
-        os.environ['CC'] = "clang-3.9"
+        os.environ['CC'] = "clang-11"
     if "CXX" not in os.environ:
         os.environ['CXX'] = "clang++"
     extra_args += ['-stdlib=libc++']
-    os.environ['CC'] = "clang-3.9"
+    os.environ['CC'] = "clang-11"
     os.environ['CXX'] = "clang++"
     os.environ['LDFLAGS'] = '-lc++'
 # else:
