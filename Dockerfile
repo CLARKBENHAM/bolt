@@ -1,6 +1,10 @@
 #Based on pytorch extension script dockerfile: https://github.com/pytorch/extension-script
 FROM ubuntu:20.04
 
+# so tzdata doesn't hang
+ENV TZ=America/Los_Angeles
+RUN ln -snf /usr/share/zoneinfo/$TZ /etc/localtime && echo $TZ > /etc/timezone 
+
 RUN apt-get update  -y \
   && apt-get install -y \
 	git \
@@ -32,8 +36,8 @@ RUN . /activate && \
 
 # Download LibTorch # why used Pre-cxx11 ABI before?
 RUN wget https://download.pytorch.org/libtorch/cpu/libtorch-cxx11-abi-shared-with-deps-2.0.1%2Bcpu.zip && \
-		unzip libtorch-cxx11-abi-shared-with-deps-latest.zip &&  \
-		rm libtorch-cxx11-abi-shared-with-deps-latest.zip
+		unzip libtorch-cxx11-abi-shared-with-deps-2.0.1+cpu.zip && \
+		rm libtorch-cxx11-abi-shared-with-deps-2.0.1+cpu.zip 
 
 ###%% Things added to get Bolt working; based on: https://github.com/dblalock/bolt/blob/master/BUILD.md
 RUN apt-get install \
