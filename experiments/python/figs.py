@@ -757,7 +757,7 @@ def recall_r_fig(fake_data=False, suptitle=None, l2=True, fname='l2_recall',
 
             df.rename(columns={'_algo': 'algo'}, inplace=True)
             all_nbytes = (df['_code_bits'] * df['_ncodebooks'] / 8).values
-            df['nbytes'] = all_nbytes.astype(np.int)
+            df['nbytes'] = all_nbytes.astype(int)
 
             for b, nbytes in enumerate(NBYTES_LIST):
                 ax = axes[d, b]
@@ -947,7 +947,7 @@ def distortion_fig(fake_data=False, l2=True, suptitle=None,
 
             # df['nbytes'] = df['_code_bits'] * df['_ncodebooks'] / 8
             all_nbytes = (df['_code_bits'] * df['_ncodebooks'] / 8).values
-            df['nbytes'] = ["{}B".format(b) for b in all_nbytes.astype(np.int)]
+            df['nbytes'] = ["{}B".format(b) for b in all_nbytes.astype(int)]
 
             ax = axes.ravel()[d]
             # sb.barplot(x='nbytes', y='corr', hue=' ', data=df, ax=ax)

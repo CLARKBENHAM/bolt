@@ -103,8 +103,8 @@ def _scalar_quantize(A, axis=1, signed=False, nbits=8):
     # A_offset = A - offsets
     ranges = (A - mins).max(axis=axis, keepdims=True) + 1e-20
     scales = unsigned_maxval / ranges
-    # Aq = (A_offset * (maxval / scales)).astype(np.int)
-    # Aq = (A_offset * scales).astype(np.int)
+    # Aq = (A_offset * (maxval / scales)).astype(int)
+    # Aq = (A_offset * scales).astype(int)
 
     if signed:
         # sign_offset = 1 << (nbits - 1)  # 8 bits -> 128
@@ -119,7 +119,7 @@ def _scalar_quantize(A, axis=1, signed=False, nbits=8):
 
     Aq = (A - offsets) * scales
     # print("min, max A:", Aq.min(), Aq.max())  # looks good
-    Aq = np.clip(Aq, minval, maxval).astype(np.int)
+    Aq = np.clip(Aq, minval, maxval).astype(int)
 
     return offsets, scales, Aq
 
@@ -171,7 +171,7 @@ class QuantizedMatmul(ApproxMatmul):
         # mins = A.min(axis=1, keepdims=True)
         # A_offset = A - mins
         # scales = A_offset.max(axis=1, keepdims=True) + 1e-20
-        # self.A = (A_offset * (255. / scales)).astype(np.int)
+        # self.A = (A_offset * (255. / scales)).astype(int)
 
     def set_B(self, B):
         # signed quantization (for maddubs instruction)

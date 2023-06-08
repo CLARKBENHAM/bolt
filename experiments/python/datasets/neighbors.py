@@ -132,7 +132,7 @@ def _load_complete_dataset(which_dataset, num_queries=10):
         assert num_queries > 1
         X_train, Q = extract_random_rows(X_train, how_many=num_queries)
     try:
-        true_nn = np.load(which_dataset.TRUTH).astype(np.int)
+        true_nn = np.load(which_dataset.TRUTH).astype(int)
     except AttributeError:
         true_nn = None
 

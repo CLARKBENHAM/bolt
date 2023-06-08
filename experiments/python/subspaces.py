@@ -578,7 +578,7 @@ def ksparse_pca(X, ncomponents, k):
     from sklearn.linear_model import OrthogonalMatchingPursuit
     omp = OrthogonalMatchingPursuit(n_nonzero_coefs=k, fit_intercept=False)
 
-    idx_counts = np.zeros(D, dtype=np.int)
+    idx_counts = np.zeros(D, dtype=int)
 
     V = None
     for i in range(ncomponents):

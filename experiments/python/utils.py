@@ -187,7 +187,7 @@ def kmeans(X, k, max_iter=16, init='kmc2', return_sse=False):
         print("nnz_rows: ", nnz_rows)
 
         centroids = np.zeros((k, X.shape[1]), dtype=X.dtype)
-        labels = np.full(X.shape[0], nnz_rows, dtype=np.int)
+        labels = np.full(X.shape[0], nnz_rows, dtype=int)
         if nnz_rows > 0:  # special case, because can't have slice of size 0
             # make a centroid out of each nonzero row, and assign only those
             # rows to that centroid; all other rows get assigned to next

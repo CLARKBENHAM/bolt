@@ -120,7 +120,7 @@ class PQEncoder(object):
         self.code_bits = int(np.log2(self.ncentroids))
 
         # for fast lookups via indexing into flattened array
-        self.offsets = np.arange(self.nsubvects, dtype=np.int) * self.ncentroids
+        self.offsets = np.arange(self.nsubvects, dtype=int) * self.ncentroids
 
         self.centroids = _learn_centroids(X, self.ncentroids, self.nsubvects,
                                           self.subvect_len)
@@ -168,7 +168,7 @@ def _learn_best_quantization(luts):  # luts can be a bunch of vstacked luts
 
         ceil = np.percentile(luts_offset, 100 - alpha_pct)
         scale_by = 255. / ceil
-        luts_quantized = np.floor(luts_offset * scale_by).astype(np.int)
+        luts_quantized = np.floor(luts_offset * scale_by).astype(int)
         luts_quantized = np.minimum(255, luts_quantized)
 
         # compute err
@@ -203,7 +203,7 @@ class OPQEncoder(PQEncoder):
         self.code_bits = int(np.log2(self.ncentroids))
 
         # for fast lookups via indexing into flattened array
-        self.offsets = np.arange(self.nsubvects, dtype=np.int) * self.ncentroids
+        self.offsets = np.arange(self.nsubvects, dtype=int) * self.ncentroids
 
         if self.algo == 'Bolt':
             # Note: we always pass in 0 iters in the reported experiments,
@@ -220,7 +220,7 @@ class OPQEncoder(PQEncoder):
 
         # learn appropriate offsets and shared scale factor for quantization
         self.lut_offsets = np.zeros(self.nsubvects)
-        self.order_idxs = np.arange(self.nsubvects, dtype=np.int)
+        self.order_idxs = np.arange(self.nsubvects, dtype=int)
 
         if self.quantize_lut:  # TODO put this logic in separate function
             print("learning quantization...")
@@ -263,7 +263,7 @@ class OPQEncoder(PQEncoder):
                 plt.show()
 
             lut = np.maximum(0, lut - self.lut_offsets)
-            lut = np.floor(lut * self.scale_by).astype(np.int)
+            lut = np.floor(lut * self.scale_by).astype(int)
             return np.minimum(lut, 255)
 
         return lut

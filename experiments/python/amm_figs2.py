@@ -214,7 +214,7 @@ def encode_speed_fig(save=True):
 
     # # cvals = df['C'].loc[full_byte_per_codebook]
     # df['B'].loc[full_byte_per_codebook] = df['C'].loc[full_byte_per_codebook]
-    # df['B'] = df['B'].astype(np.int)
+    # df['B'] = df['B'].astype(int)
 
     # # print("df.cols: ", df.columns)
     # print(df)
@@ -325,7 +325,7 @@ def lut_speed_fig(save=True):
     df = res.rename_values_in_col(df, 'algo', name_map)
     # print(df[:20])
 
-    # df['lutconst'] = df['lutconst'].str.strip().astype(np.float).astype(np.int)
+    # df['lutconst'] = df['lutconst'].str.strip().astype(np.float).astype(int)
     # print("df.dtypes", df.dtypes)
     # import sys; sys.exit()
 

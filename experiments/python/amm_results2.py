@@ -198,7 +198,7 @@ def dense_amm_timings():
 
     # print("uniq n vals: ", np.unique(df['N']))
 
-    sizes = np.empty((len(df), 4), dtype=np.int)
+    sizes = np.empty((len(df), 4), dtype=int)
     sizes[:, 0] = df['N']
     sizes[:, 1] = df['D']
     sizes[:, 2] = df['M']
@@ -296,7 +296,7 @@ def _extract_cols_into_list_of_tuples(df, cols):
     # return [tuple(row) for row in df[cols].iterrows()]
     ar = np.vstack([df[col] for col in cols]).T
     # print("ar: \n", ar)
-    ar = np.atleast_2d(ar).astype(np.int)
+    ar = np.atleast_2d(ar).astype(int)
     # return [tuple(row) for row in ar]
     return [sum([hash(-12435 * i + 1) ^ hash(1234567 * val)
             for i, val in enumerate(row)]) for row in ar]
@@ -328,7 +328,7 @@ def _join_with_mithral_times(df, timing_dtype='f32'):
     if timing_dtype is not None:
         time_df = time_df.loc[time_df['dtype'].str.strip() == timing_dtype]
     df = df.loc[df['method'].str.lower().str.startswith('mithral')]
-    df['ncodebooks'] = df['ncodebooks'].astype(np.int)
+    df['ncodebooks'] = df['ncodebooks'].astype(int)
 
     # time_df.reset_index(inplace=True, drop=True)
     # df.reset_index(inplace=True, drop=True)
@@ -416,7 +416,7 @@ def _join_with_osnap_times(df):
     df['s'] = 1
     df['s'].loc[df['method'] == methods.METHOD_OSNAP] = 4
     # print("osnap df shape: ", df.shape)
-    df['d'] = df['d'].astype(np.int)
+    df['d'] = df['d'].astype(int)
 
     # print("time_df:\n", time_df[time_df['dset'] == 'Cifar10'])
     # note that d < s isn't present in time_df, which makes sense
@@ -482,7 +482,7 @@ def extract_pareto_frontier_idxs(xvals, yvals):
 def _join_with_sparse_sketch_times(df, sparse_pareto=True):
     time_df = sparse_amm_timings()
     df = df.loc[df['method'].str.lower().str.startswith('sparse')]
-    df['d'] = df['d'].astype(np.int)
+    df['d'] = df['d'].astype(int)
 
     new_rows = []
     for _, row in df.iterrows():

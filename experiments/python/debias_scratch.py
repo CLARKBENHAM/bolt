@@ -62,7 +62,7 @@ def main():
     print("biases:\n", biases)
 
     # col = try_Cs / 4
-    # row = np.log2(try_Us).astype(np.int)
+    # row = np.log2(try_Us).astype(int)
     # biases_hat = np.outer(col, row)
     # print("biases_hat:\n", biases_hat)
 

@@ -14,7 +14,7 @@ _memory = Memory('.', verbose=0)
 @_memory.cache
 def learn_pq(X, ncentroids, nsubvects, subvect_len, max_kmeans_iters=16):
     codebooks = np.empty((ncentroids, nsubvects, subvect_len))
-    assignments = np.empty((X.shape[0], nsubvects), dtype=np.int)
+    assignments = np.empty((X.shape[0], nsubvects), dtype=int)
 
     # print "codebooks shape: ", codebooks.shape
 
@@ -61,7 +61,7 @@ def _encode_X_pq(X, codebooks, elemwise_dist_func=_dists_elemwise_sq):
 
     assert X.shape[1] == (nsubvects * subvect_len)
 
-    idxs = np.empty((X.shape[0], nsubvects), dtype=np.int)
+    idxs = np.empty((X.shape[0], nsubvects), dtype=int)
     X = X.reshape((X.shape[0], nsubvects, subvect_len))
     for i, row in enumerate(X):
         row = row.reshape((1, nsubvects, subvect_len))
@@ -157,7 +157,7 @@ def eigenvalue_allocation(num_buckets, eigenvalues, shuffle=False):
         bucket_size[bucket] += 1
 
     if shuffle:
-        shuffle_idxs = np.arange(num_buckets, dtype=np.int)
+        shuffle_idxs = np.arange(num_buckets, dtype=int)
         np.random.shuffle(shuffle_idxs)
         permutation = permutation[shuffle_idxs]
 

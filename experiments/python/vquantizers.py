@@ -129,7 +129,7 @@ def _learn_best_quantization(luts):
         scale_by = 255. / ceil
         # if only_shift:
         #     scale_by = 1 << int(np.log2(scale_by))
-        luts_quantized = np.floor(luts_offset * scale_by).astype(np.int)
+        luts_quantized = np.floor(luts_offset * scale_by).astype(int)
         luts_quantized = np.minimum(255, luts_quantized)
 
         # compute err
@@ -165,7 +165,7 @@ class MultiCodebookEncoder(abc.ABC):
         self.code_bits = int(np.log2(self.ncentroids))
 
         # for fast lookups via indexing into flattened array
-        self.offsets = (np.arange(self.ncodebooks, dtype=np.int) *
+        self.offsets = (np.arange(self.ncodebooks, dtype=int) *
                         self.ncentroids)
 
     def name(self):
@@ -450,7 +450,7 @@ class PQEncoder(MultiCodebookEncoder):
                               elemwise_dist_func=self.elemwise_dist_func)
             if self.quantize_lut and quantize:
                 lut = np.maximum(0, lut - self.lut_offsets)
-                lut = np.floor(lut * self.scale_by).astype(np.int)
+                lut = np.floor(lut * self.scale_by).astype(int)
                 lut = np.minimum(lut, 255)
             luts[i] = lut.T
         return luts
@@ -541,7 +541,7 @@ def _mithral_quantize_luts(luts, lut_work_const, force_power_of_2=True):
     #     offsets, scale, _ = _learn_best_quantization(luts2d)
     #     offsets = offsets[np.newaxis, :, np.newaxis]
     #     luts = np.maximum(0, luts - offsets) * scale
-    #     luts = np.floor(luts).astype(np.int)
+    #     luts = np.floor(luts).astype(int)
     #     luts = np.minimum(255, luts)
     #     return luts, offsets.sum(), scale
 
@@ -561,7 +561,7 @@ def _mithral_quantize_luts(luts, lut_work_const, force_power_of_2=True):
 
     offsets = mins[np.newaxis, :, np.newaxis]
     luts_quantized = (luts - offsets) * scale
-    luts_quantized = (luts_quantized + .5).astype(np.int)
+    luts_quantized = (luts_quantized + .5).astype(int)
     # luts_quantized = np.minimum(luts_quantized, 255)
 
     assert np.min(luts_quantized) >= 0
@@ -624,7 +624,7 @@ class MithralEncoder(MultiCodebookEncoder):
 
 
 def main():
-    X = np.ones((3, 75), dtype=np.int)
+    X = np.ones((3, 75), dtype=int)
     _insert_zeros(X, 53)
 
 
