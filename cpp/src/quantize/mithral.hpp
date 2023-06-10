@@ -157,7 +157,7 @@ template<> struct mithral_input_type_traits<int8_t> {
 };
 
 template<class InputT>
-struct mithral_amm {
+struct mithral_amm : torch::CustomClassHolder {
     using traits = mithral_input_type_traits<InputT>;
     using scale_t = typename traits::encoding_scales_type;
     using offset_t = typename traits::encoding_offsets_type;

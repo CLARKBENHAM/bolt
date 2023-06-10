@@ -23,7 +23,9 @@
     #include "catch.hpp"
 #endif
 
-struct MatmulTaskShape { int N, D, M; const char* name; };
+#include <torch/custom_class.h>
+
+struct MatmulTaskShape : torch::CustomClassHolder { int N, D, M; const char* name; };
 // static constexpr MatmulTaskShape kCaltechTaskShape {49284, 27, 2, "Caltech"};
 static constexpr MatmulTaskShape kCaltechTaskShape0 {
     (224 - 3 + 1) * (224 - 3 + 1), 3 * (3 * 3), 2, "Caltech3x3"}; // 49284, 27
@@ -43,7 +45,7 @@ namespace {
 // ================================================================ mithral
 
 template<class InputT>
-struct mithral_amm_task { // Class which all data uses. Copy this one. 
+struct mithral_amm_task : torch::CustomClassHolder { // Class which all data uses. Copy this one. 
     using traits = mithral_input_type_traits<InputT>;
     using scale_t = typename traits::encoding_scales_type;
     using offset_t = typename traits::encoding_offsets_type;
@@ -130,7 +132,7 @@ struct mithral_amm_task { // Class which all data uses. Copy this one.
     RowMatrix<int> idxs;
 
     // amm object
-    mithral_amm<InputT> amm;
+    c10::intrusive_ptr<mithral_amm<InputT>> amm;
 
     // random data
     ColMatrix<InputT> X;
@@ -144,7 +146,7 @@ void _profile_mithral(const char* dset_name, uint32_t N, uint32_t D, uint32_t M,
 {
     if ((lut_work_const > 0) && (lut_work_const > ncodebooks)) { return; }
     // Where all task info is added. 
-    mithral_amm_task<InputT> task(N, D, M, ncodebooks, lut_work_const); 
+    c10::intrusive_ptr<mithral_amm_task<InputT>> task(N, D, M, ncodebooks, lut_work_const); 
 
     // mithral_amm_task<InputT> task_dense(N, D, M, ncodebooks, -1);
 

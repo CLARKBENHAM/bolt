@@ -23,7 +23,6 @@ defines = defines_fast
 
 cc_binary(
     name = "hello_world",
-    #includes profile_amm.cpp for timing tests
     srcs = ['test/hello_world.cpp'], 
     copts = ['-g'], #copts,
     defines = defines,
