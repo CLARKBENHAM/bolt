@@ -146,7 +146,7 @@ void _profile_mithral(const char* dset_name, uint32_t N, uint32_t D, uint32_t M,
 {
     if ((lut_work_const > 0) && (lut_work_const > ncodebooks)) { return; }
     // Where all task info is added. 
-    c10::intrusive_ptr<mithral_amm_task<InputT>> task(N, D, M, ncodebooks, lut_work_const); 
+    mithral_amm_task<InputT> task(N, D, M, ncodebooks, lut_work_const); 
 
     // mithral_amm_task<InputT> task_dense(N, D, M, ncodebooks, -1);
 

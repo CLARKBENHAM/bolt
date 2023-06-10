@@ -62,4 +62,16 @@ set_target_properties(bolt PROPERTIES LINKER_LANGUAGE CXX)
 target_compile_definitions(bolt PRIVATE "-DBLAZE")
 target_link_libraries(bolt Eigen3::Eigen)
 target_include_directories(bolt PUBLIC ${CMAKE_SOURCE_DIR})
-set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -std=c++14 -march=native -fno-rtti -ffast-math")
+set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -std=c++17 -march=native -fno-rtti -ffast-math")
+
+# Torch Op
+set(CMAKE_CXX_STANDARD 17)
+
+find_package(Torch REQUIRED)
+ 
+# # Define our library target
+# add_library(bolt SHARED mithral_torch.cpp)
+# # Link against LibTorch
+target_link_libraries(bolt "${TORCH_LIBRARIES}")
+
+
