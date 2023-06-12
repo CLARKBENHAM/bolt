@@ -18,6 +18,7 @@ from operator import attrgetter, itemgetter
 import matplotlib.pyplot as plt
 from matplotlib import colors
 import seaborn as sns
+import itertools
 
 from python import matmul_datasets as md 
 from python import vq_amm
@@ -121,11 +122,16 @@ MetricsSoftmax = namedtuple("MetricsSoftmax", ["np_time", "py_fit_time", "py_est
 
 #Run on last layers of NN
 results=[]
+results_std=[]
 ncodebooks=2
 NREPS=10
+NAVG=5
 print(f"ncodebooks={ncodebooks}")
-for datas in data_sources:
-  for data in datas:
+for data in itertools.chain(*data_sources):
+  print("$$$$$data", data.name)
+  min_trials = []
+  for _ in range(NAVG):
+    trials=[]
     for _ in range(NREPS):
       [W_test,W_train, X_test, X_train, Y_test, Y_train] = attrgetter('W_test','W_train', 'X_test', 'X_train', 'Y_test', 'Y_train')(data)
       #Mithral C++ doesn't work with counts not aligned to 32
@@ -176,23 +182,25 @@ for datas in data_sources:
       cpp_est_per_ix_kept=np.sum(cpp_max_ix==max_ix)/cpp_max_ix.size
       o= MetricsSoftmax(np_time, py_fit_time, py_est_time, py_est_r2, py_est_per_ix_kept, copy_to_cpp_time, cpp_est_time, cpp_est_r2, cpp_est_per_ix_kept)
       
-      results += [o]
-    
-chunks = [results[i*NREPS:(i+1)*NREPS] for i in range(len(results) //NREPS)]
-for c in chunks:
-  print("\n##Start of new REPS##")
+      trials += [o]
+    min_trials += [MetricsSoftmax(*np.min(trials, axis=0))]
+  print(f"##Each Min Trial of {NAVG} for {data.name}##")
   attr=['np_time', 'py_est_r2', 'py_est_per_ix_kept', 'cpp_est_time', 'cpp_est_r2', 'cpp_est_per_ix_kept']
   print(attr)
-  for o in c:
+  for o in min_trials:
     print(attrgetter(*attr)(o))
-
-min_np_times=list(map(lambda i: min(i, key=attrgetter('np_time')).np_time, chunks))
-min_mithral_times=list(map(lambda i: min(i, key=attrgetter('cpp_est_time')).cpp_est_time, chunks))
+    
+  results += [MetricsSoftmax(*np.average(min_trials, axis=0))]
+  results_std += [MetricsSoftmax(*np.std(min_trials, axis=0))]
+  
+min_np_times=list(map(lambda i: i.np_time, results))
+min_mithral_times=list(map(lambda i: i.cpp_est_time, results))
+cpp_est_per_ix_kepts=list(map(lambda i: i.cpp_est_per_ix_kept, results))
 print(f"ncodebooks={ncodebooks}")
-print(f"Min Numpy Matrix mult times: {min_np_times}")
-print(f"Min Mithral times: {min_mithral_times}")
-print(f"Mithral times faster: {[i/j for i,j in zip(min_np_times, min_mithral_times)]}")
-
+print(f"Avg over {NAVG} of Min of {NREPS} Numpy Matrix mult times: {min_np_times}, {[i.np_time for i in results_std]}")
+print(f"Avg over {NAVG} of Min of {NREPS} Mithral times: {min_mithral_times}, {[i.cpp_est_time for i in results_std]}")
+print(f"Avg over {NAVG} of Min of {NREPS} cpp_est_per_ix_keps: {cpp_est_per_ix_kepts}")
+print(f"Py/C++ time ratio: {[i/j for i,j in zip(min_np_times, min_mithral_times)]}")
 
 #%%
 plt.title("Raw Y")
