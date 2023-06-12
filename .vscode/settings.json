@@ -1,3 +1,11 @@
 {
-	"cmake.configureOnOpen": false
+	"cmake.configureOnOpen": false,
+	"files.associations": {
+		"alignedvector3": "cpp",
+		"array": "cpp",
+		"string": "cpp",
+		"string_view": "cpp",
+		"iterator": "cpp",
+		"vector": "cpp"
+	}
 }
