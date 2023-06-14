@@ -622,6 +622,10 @@ task.scan()
 #%%
 ### Scrap ###
 ### Scrap ###
+# R^2 score of making luts in C++ and Python is >0.999
+luts = np.array([np.ravel(est.luts[i], order='C') for i in range(len(est.luts))], dtype=np.uint8)     
+print(r2_score(luts, task.amm.luts))
+
 
 #With random X,Q and copied python params c++ makes the right codes and luts
 copy_python_to_amm(est, task.amm)
