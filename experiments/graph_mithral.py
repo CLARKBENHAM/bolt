@@ -158,7 +158,7 @@ for data in itertools.chain(*data_sources):
       py_est_r2 = r2_score(Y,Y_hat1)
       py_max_ix=np.apply_along_axis(np.argmax, 1, Y_hat1)
       py_est_per_ix_kept=np.sum(py_max_ix==max_ix)/py_max_ix.size
-       
+      
       task=mithral_wrapped.mithral_amm_task_float(*X_test.shape,W_test.shape[1], ncodebooks, lutconsts)
       task.amm.out_mat = np.zeros(task.amm.out_mat.shape)
       t = time.perf_counter()

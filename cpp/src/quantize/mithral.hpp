@@ -35,6 +35,8 @@
     #endif
 #endif
 
+#include <torch/script.h>
+
 // Testing pybind
 int sub(int i, int j);
 int add(int i, int j);

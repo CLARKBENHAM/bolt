@@ -242,6 +242,10 @@ void _profile_scan_all(int nrows, int nbytes, int nout=1) {
     msg = string_with_format(fmt, "mithral tile1 upcast8", ncodebooks);
     REPEATED_PROFILE_DIST_COMPUTATION(kNreps, msg, kNtrialsScan,
         dists_u8_x2.data(), dists_u8_x2.size(),
+        
+        mithral_scan<8, 1>(Eigen::PlainObjectBase<Eigen::Matrix<unsigned char, -1, -1, 0, -1, -1> >::Scalar*, int&, int&, int&, 
+        Eigen::PlainObjectBase<Eigen::Matrix<unsigned char, -1, -1, 0, -1, -1> >::Scalar*, Eigen::PlainObjectBase<Eigen::Matrix<unsigned char, -1, -1, 0, -1, -1> >::Scalar*)
+
         (mithral_scan<8, 1>(codes16.data(), nblocks, ncodebooks, nout,
                             luts16.data(), dists_u8_x2.data())));
     msg = string_with_format(fmt, "mithral tile2 upcast16", ncodebooks);

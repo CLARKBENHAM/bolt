@@ -23,9 +23,9 @@
     #include "catch.hpp"
 #endif
 
-#include <torch/custom_class.h>
+#include <torch/script.h>
 
-struct MatmulTaskShape : torch::CustomClassHolder { int N, D, M; const char* name; };
+struct MatmulTaskShape { int N, D, M; const char* name; };
 // static constexpr MatmulTaskShape kCaltechTaskShape {49284, 27, 2, "Caltech"};
 static constexpr MatmulTaskShape kCaltechTaskShape0 {
     (224 - 3 + 1) * (224 - 3 + 1), 3 * (3 * 3), 2, "Caltech3x3"}; // 49284, 27
@@ -132,7 +132,7 @@ struct mithral_amm_task : torch::CustomClassHolder { // Class which all data use
     RowMatrix<int> idxs;
 
     // amm object
-    c10::intrusive_ptr<mithral_amm<InputT>> amm;
+    mithral_amm<InputT> amm;
 
     // random data
     ColMatrix<InputT> X;

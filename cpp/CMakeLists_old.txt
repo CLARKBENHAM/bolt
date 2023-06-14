@@ -31,15 +31,15 @@ set(sourceFiles
   ${CMAKE_SOURCE_DIR}/test/test_avx_utils.cpp
   ${CMAKE_SOURCE_DIR}/test/quantize/profile_amm.cpp
   #${CMAKE_SOURCE_DIR}/test/quantize/profile_amm_old.cpp
-  #${CMAKE_SOURCE_DIR}/test/quantize/profile_bolt.cpp
-  #${CMAKE_SOURCE_DIR}/test/quantize/profile_encode.cpp
-  #${CMAKE_SOURCE_DIR}/test/quantize/profile_lut_creation.cpp
-  #${CMAKE_SOURCE_DIR}/test/quantize/profile_multicodebook.cpp
-  #${CMAKE_SOURCE_DIR}/test/quantize/profile_pq.cpp
-  #${CMAKE_SOURCE_DIR}/test/quantize/profile_scan.cpp
-  #${CMAKE_SOURCE_DIR}/test/quantize/test_bolt.cpp
-  #${CMAKE_SOURCE_DIR}/test/quantize/test_mithral.cpp
-  #${CMAKE_SOURCE_DIR}/test/quantize/test_multicodebook.cpp
+  ${CMAKE_SOURCE_DIR}/test/quantize/profile_bolt.cpp
+  ${CMAKE_SOURCE_DIR}/test/quantize/profile_encode.cpp
+  ${CMAKE_SOURCE_DIR}/test/quantize/profile_lut_creation.cpp
+  ${CMAKE_SOURCE_DIR}/test/quantize/profile_multicodebook.cpp
+  ${CMAKE_SOURCE_DIR}/test/quantize/profile_pq.cpp
+  ${CMAKE_SOURCE_DIR}/test/quantize/profile_scan.cpp
+  ${CMAKE_SOURCE_DIR}/test/quantize/test_bolt.cpp
+  ${CMAKE_SOURCE_DIR}/test/quantize/test_mithral.cpp
+  ${CMAKE_SOURCE_DIR}/test/quantize/test_multicodebook.cpp
   
   ${CMAKE_SOURCE_DIR}/mithral_torch.cpp
   )
