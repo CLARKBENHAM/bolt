@@ -46,10 +46,10 @@ MetricsSoftmax = namedtuple("MetricsSoftmax", ["np_time", "py_fit_time", "py_est
 results=[]
 results_std=[]
 NREPS=10
-NAVG=5
-for data in itertools.chain(*data_sources):
+NAVG=2
+for data in itertools.chain(*data_sources[1:]):
   print("$$$$$data", data.name)
-  for ncodebooks in [16]:
+  for ncodebooks in [8]:
     print(f"ncodebooks={ncodebooks}")
     min_trials = []
     for _ in range(NAVG):
@@ -103,7 +103,6 @@ for data in itertools.chain(*data_sources):
         cpp_max_ix=np.apply_along_axis(np.argmax, 1, Y_hat2)
         cpp_est_per_ix_kept=np.sum(cpp_max_ix==max_ix)/cpp_max_ix.size
         o= MetricsSoftmax(np_time, py_fit_time, py_est_time, py_est_r2, py_est_per_ix_kept, copy_to_cpp_time, cpp_est_time, cpp_est_r2, cpp_est_per_ix_kept)
-
         trials += [o]
 
       min_trials += [MetricsSoftmax(*np.min(trials, axis=0))]
@@ -126,7 +125,7 @@ for data in itertools.chain(*data_sources):
   print(f"Py/C++ time ratio: {[i/j for i,j in zip(min_np_times, min_mithral_times)]}")
 
 #%%
-quit()
+quit() # Below works but don't want to run as script
 plt.title("Raw Y")
 plt.hist(Y_test.flatten(),bins=30,label='Y',alpha=0.3)
 plt.hist(Y_hat1.flatten(),bins=30,label='Y_hat1 (py)', alpha=0.3)
