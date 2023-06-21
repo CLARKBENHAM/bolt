@@ -1,4 +1,5 @@
 #%% A pretty version of mithral speed tests, with graphs
+# approximate mat mults of on last layers of NN
 # Meant to be run as notebook; run from bolt/experiments directory if as script
 
 import re
@@ -18,9 +19,11 @@ from operator import attrgetter, itemgetter
 import matplotlib.pyplot as plt
 from matplotlib import colors
 import seaborn as sns
+import itertools
 
 from python import matmul_datasets as md 
 from python import vq_amm
+from copy_to_amm import copy_python_to_amm, extract_py_vars, copy_python_luts
 
 try:
   repo_path=os.path.join(os.path.dirname(__file__), "..")
@@ -36,165 +39,93 @@ print = functools.partial(print, flush=True)
 assert 5 == mithral_wrapped.add(2, 3) #imports worked
 
 
-def _reshape_split_lists(enc, att: str):
-  #(ncodebooks x 4) for values for ncodebook subspaces to pick from the 4 levels 
-  #aka ncodebooks by the 4 dims to split on for each output
-  return np.array([
-    getattr(i, att)
-    for a in enc.splits_lists 
-    for i in a]).reshape(enc.ncodebooks,4)
-
-def extract_py_vars(est):
-  """Munges and casts python param data to work for C++"""
-  
-  #py est splitvals is jagged 3d (ncodebooks x 4 x [1,2,4,8]). Reshape to (ncodebooks x 16)
-  raw_splitvals=[[v for i in a for v in i.vals]
-                     for a in est.enc.splits_lists 
-                     ]
-  default_sz = max(map(len, raw_splitvals))
-  ## i idx is 2^{i-1} value can split nodes for all the ncodebook subspaces
-  #C++ expects 0 padded values out to 16 per BST of split values, on 1 indexed array
-  # [0,v1,v2,v2,v3,v3,v3,v3,v4,v4,v4,v4,v4,v4,v4,v4]
-  # (nsplits, [1,2,4,8]) 
-  
-  raw_splitvals_padded=np.array([np.pad(l, (1,0))
-            for l in raw_splitvals
-            ])
-  #Python Computes: (X-offset) * scale; C++ Computes: X*scale + offset; before comparing to these splitvals need to adjust
-  #WARN: these can overflow sometimes from int8 
-  splitvals=(raw_splitvals_padded-128).clip(-128,127).astype(np.int8)
-  
-  encode_scales = _reshape_split_lists(est.enc, 'scaleby').astype(np.float32)
-  raw_encode_offset = _reshape_split_lists(est.enc, 'offset').astype(np.float32) 
-  c = est.enc.centroids.astype(np.float32)
-  reshaped_centroids=np.concatenate(list(map(lambda cbook_ix : np.ravel(c[cbook_ix], order='f'), range(len(c)))))
-  return {
-      "splitdims": _reshape_split_lists(est.enc, 'dim').astype(np.uint32), #these are what's called idxs in paper?
-      "splitvals": splitvals,
-      "encode_scales": encode_scales, 
-      "encode_offsets": raw_encode_offset*-encode_scales - 128, 
-      "centroids": reshaped_centroids,
-      #"idxs": ,  #only need to set if we have a sparse matrix; idxs is used in mithral_lut_sparse always, but idxs are fine by default
-      # if lut_work_const then c++ is row (ncodebooks,D) set to ncodebooks*[range(D)], else its ncodebooks*[sorted(permutation(range(D), nnz_per_centroid))]
-      #Python encode_X (idxs?!) = offsets into raveled indxs + idxs=[[i%16]*ncodebooks for i in range(N)]), the offset is added to each idxs row
-      #cpp out_offset_sum/out_scale is set by results at _compute_offsets_scale_from_mins_maxs, after done learning luts in mithral_lut_dense&mithral_lut_spares. no need to copy
-      #   But then it's never used?
-      "out_offset_sum": np.float32(est.offset),
-      "out_scale":      np.float32(est.scale),
-  }
-
-def copy_python_to_amm(py_est, amm):
-  py_vars = extract_py_vars(py_est)
-  [c, d,v,eo,es, osum, oscale] = itemgetter('centroids', 'splitdims','splitvals', 'encode_offsets', 'encode_scales', 'out_offset_sum', 'out_scale')(py_vars)
-
-  amm.setCentroidsCopyData(c)
-  amm.setSplitdims(d)
-  amm.setSplitvals(v)
-  amm.setEncode_scales(es) 
-  amm.setEncode_offsets(eo)
-  amm.out_offset_sum = osum
-  amm.out_scale  = oscale
-  #amm.setIdxs(.astype(int)) #only for non-dense
-  
-  #assert np.all(amm.getCentroids() == c) #shape wrong
-  assert np.all(np.ravel(amm.getCentroids()) == np.ravel(c)) 
-  assert np.all(amm.getSplitdims() == d)
-  #assert np.all(amm.getSplitvals() == v)
-  assert np.all(amm.getEncode_scales()==es)
-  assert np.all(amm.getEncode_offsets() == eo)
-   
-  #del py_est  #to confirm pybind doesn't depend on python memory
-
-def copy_python_luts(est, amm):
-  """These aren't really hyperparams in that if Q changes 
-  may or may not be efficent to re-compute luts.
-  Re-creating luts is quick and uses test version. Not much accuracy difference
-  Don't expect Q, therefore luts, to change"""
-  luts = np.array([np.ravel(est.luts[i], order='C') 
-                   for i in range(len(est.luts))],
-                  dtype=np.uint8) 
-  amm.luts = luts
-  
 data_sources = [md.load_cifar10_tasks(), md.load_cifar100_tasks()]
 #%%
 MetricsSoftmax = namedtuple("MetricsSoftmax", ["np_time", "py_fit_time", "py_est_time", "py_est_r2", "py_est_per_ix_kept", "copy_to_cpp_time", "cpp_est_time", "cpp_est_r2", "cpp_est_per_ix_kept"])
 
-#Run on last layers of NN
 results=[]
-ncodebooks=2
-NREPS=10
-print(f"ncodebooks={ncodebooks}")
-for datas in data_sources:
-  for data in datas:
-    for _ in range(NREPS):
-      [W_test,W_train, X_test, X_train, Y_test, Y_train] = attrgetter('W_test','W_train', 'X_test', 'X_train', 'Y_test', 'Y_train')(data)
-      #Mithral C++ doesn't work with counts not aligned to 32
-      align32=len(Y_test)-(len(Y_test)%32)
-      Y_test=Y_test[:align32]
-      X_test=X_test[:align32]
-      lutconsts=-1
-      t = time.perf_counter()
-      Y=X_test@W_test
-      np_time=time.perf_counter() - t
-      #mse=np.mean((np.abs(np.ravel(Y) - np.ravel(Y_test)))**2)
-      #assert mse < 0.001*Y.size, mse
-      max_ix=np.apply_along_axis(np.argmax, 1, Y_test)
-      
-      hparams_dict = {'ncodebooks': ncodebooks, 'lut_work_const': lutconsts}
-      est = vq_amm.MithralMatmul(**hparams_dict)
-      t = time.perf_counter()
-      est.fit(X_train,W_train)
-      py_fit_time=time.perf_counter() - t
- 
-      t = time.perf_counter()
-      Y_hat1 = est.predict(X_test, W_test)
-      py_est_time=time.perf_counter() - t
-      py_est_r2 = r2_score(Y,Y_hat1)
-      py_max_ix=np.apply_along_axis(np.argmax, 1, Y_hat1)
-      py_est_per_ix_kept=np.sum(py_max_ix==max_ix)/py_max_ix.size
-       
-      task=mithral_wrapped.mithral_amm_task_float(*X_test.shape,W_test.shape[1], ncodebooks, lutconsts)
-      task.amm.out_mat = np.zeros(task.amm.out_mat.shape)
-      t = time.perf_counter()
-      task.X=X_test
-      task.Q=W_test
-      copy_python_to_amm(est, task.amm)
-      copy_python_luts(est, task.amm) # Or can make luts in C++
-      copy_to_cpp_time=time.perf_counter() - t
+results_std=[]
+NREPS=15
+NAVG=10
+for data in itertools.chain(*data_sources):
+  print("$$$$$data", data.name)
+  for ncodebooks in [4]:
+    print(f"ncodebooks={ncodebooks}")
+    min_trials = []
+    for _ in range(NAVG):
+      trials=[]
+      for _ in range(NREPS):
+        [W_test,W_train, X_test, X_train, Y_test, Y_train] = attrgetter('W_test','W_train', 'X_test', 'X_train', 'Y_test', 'Y_train')(data)
+        #Mithral C++ doesn't work with counts not aligned to 32
+        align32=len(Y_test)-(len(Y_test)%32)
+        Y_test=Y_test[:align32]
+        X_test=X_test[:align32]
+        lutconsts=-1
+        t = time.perf_counter()
+        Y=X_test@W_test
+        np_time=time.perf_counter() - t
+        #mse=np.mean((np.abs(np.ravel(Y) - np.ravel(Y_test)))**2)
+        #assert mse < 0.001*Y.size, mse
+        max_ix=np.apply_along_axis(np.argmax, 1, Y_test)
+        
+        hparams_dict = {'ncodebooks': ncodebooks, 'lut_work_const': lutconsts}
+        est = vq_amm.MithralMatmul(**hparams_dict)
+        t = time.perf_counter()
+        est.fit(X_train,W_train)
+        py_fit_time=time.perf_counter() - t
+   
+        t = time.perf_counter()
+        Y_hat1 = est.predict(X_test, W_test)
+        py_est_time=time.perf_counter() - t
+        py_est_r2 = r2_score(Y,Y_hat1)
+        py_max_ix=np.apply_along_axis(np.argmax, 1, Y_hat1)
+        py_est_per_ix_kept=np.sum(py_max_ix==max_ix)/py_max_ix.size
+        
+        task=mithral_wrapped.mithral_amm_task_float(*X_test.shape,W_test.shape[1], ncodebooks, lutconsts)
+        task.amm.out_mat = np.zeros(task.amm.out_mat.shape)
+        t = time.perf_counter()
+        copy_python_to_amm(est, task.amm)
+        copy_python_luts(est, task.amm) # Or can make luts in C++
+        task.X=X_test
+        task.Q=W_test
+        copy_to_cpp_time=time.perf_counter() - t
+  
+        #task.Q=W_train[:len(W_test)]  # W_train and W_test the same here; not needed
+        #task.lut() #making luts in C++ and Py has R^2 of 0.999 
+        #task.Q =W_test
+        t = time.perf_counter()
+        task.run_matmul(False)
+        #task.run_matmul(True) #Encodes test Q as LUT instead of using train_Q's luts 
+        Y_hat2=task.amm.out_mat #Since we just care about relative order for predicting output
+        cpp_est_time=time.perf_counter() - t
+        Y_hat2=(Y_hat2.astype(np.uint16)*task.amm.ncodebooks/task.amm.out_scale) + task.amm.out_offset_sum
+        cpp_est_r2=r2_score(Y, Y_hat2)
+        cpp_max_ix=np.apply_along_axis(np.argmax, 1, Y_hat2)
+        cpp_est_per_ix_kept=np.sum(cpp_max_ix==max_ix)/cpp_max_ix.size
+        o= MetricsSoftmax(np_time, py_fit_time, py_est_time, py_est_r2, py_est_per_ix_kept, copy_to_cpp_time, cpp_est_time, cpp_est_r2, cpp_est_per_ix_kept)
+        trials += [o]
 
-      #task.X=X_train[:len(X_test)]
-      #task.lut()#use X known at train time
-      #task.X =X_test
-      t = time.perf_counter()
-      task.run_matmul(False)
-      #task.run_matmul(True) #Encodes test X as centroids instead of using train_x's centroids
-      Y_hat2=task.amm.out_mat #Since we just care about relative order for predicting output
-      cpp_est_time=time.perf_counter() - t
-      Y_hat2=(Y_hat2.astype(np.uint16)*ncodebooks/task.amm.out_scale) + task.amm.out_offset_sum
-      cpp_est_r2=r2_score(Y, Y_hat2)
-      cpp_max_ix=np.apply_along_axis(np.argmax, 1, Y_hat2)
-      cpp_est_per_ix_kept=np.sum(cpp_max_ix==max_ix)/cpp_max_ix.size
-      o= MetricsSoftmax(np_time, py_fit_time, py_est_time, py_est_r2, py_est_per_ix_kept, copy_to_cpp_time, cpp_est_time, cpp_est_r2, cpp_est_per_ix_kept)
+      min_trials += [MetricsSoftmax(*np.min(trials, axis=0))]
+    print(f"## Min of {NREPS} trials for {data.name}##")
+    attr=['np_time', 'py_est_r2', 'py_est_per_ix_kept', 'cpp_est_time', 'cpp_est_r2', 'cpp_est_per_ix_kept']
+    print(attr)
+    for o in min_trials:
+      print(attrgetter(*attr)(o))
       
-      results += [o]
+    results += [MetricsSoftmax(*np.average(min_trials, axis=0))]
+    results_std += [MetricsSoftmax(*np.std(min_trials, axis=0))]
     
-chunks = [results[i*NREPS:(i+1)*NREPS] for i in range(len(results) //NREPS)]
-for c in chunks:
-  print("\n##Start of new REPS##")
-  attr=['np_time', 'py_est_r2', 'py_est_per_ix_kept', 'cpp_est_time', 'cpp_est_r2', 'cpp_est_per_ix_kept']
-  print(attr)
-  for o in c:
-    print(attrgetter(*attr)(o))
-
-min_np_times=list(map(lambda i: min(i, key=attrgetter('np_time')).np_time, chunks))
-min_mithral_times=list(map(lambda i: min(i, key=attrgetter('cpp_est_time')).cpp_est_time, chunks))
-print(f"ncodebooks={ncodebooks}")
-print(f"Min Numpy Matrix mult times: {min_np_times}")
-print(f"Min Mithral times: {min_mithral_times}")
-print(f"Mithral times faster: {[i/j for i,j in zip(min_np_times, min_mithral_times)]}")
-
+  min_np_times=list(map(lambda i: i.np_time, results))
+  min_mithral_times=list(map(lambda i: i.cpp_est_time, results))
+  cpp_est_per_ix_kepts=list(map(lambda i: i.cpp_est_per_ix_kept, results))
+  print(f"ncodebooks={ncodebooks}")
+  print(f"Avg over {NAVG} of Min of {NREPS} Numpy Matrix mult times: {min_np_times}, {[i.np_time for i in results_std]}")
+  print(f"Avg over {NAVG} of Min of {NREPS} Mithral times: {min_mithral_times}, {[i.cpp_est_time for i in results_std]}")
+  print(f"Avg over {NAVG} of Min of {NREPS} cpp_est_per_ix_keps: {cpp_est_per_ix_kepts}")
+  print(f"Py/C++ time ratio: {[i/j for i,j in zip(min_np_times, min_mithral_times)]}")
 
 #%%
+quit() # Below works but don't want to run as script
 plt.title("Raw Y")
 plt.hist(Y_test.flatten(),bins=30,label='Y',alpha=0.3)
 plt.hist(Y_hat1.flatten(),bins=30,label='Y_hat1 (py)', alpha=0.3)
