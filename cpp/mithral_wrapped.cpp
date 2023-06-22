@@ -267,6 +267,48 @@ PYBIND11_MODULE(mithral_wrapped, m) {
             //delete self.idxs;
             self.idxs = const_cast<const int*>(mf.data()); 
         })
+        
+        .def("setSplitdimsCopyData", [](mithral_amm<float> &self , py::array_t<uint32_t, py::array::c_style>& mf) {
+            py::buffer_info buf1 = mf.request();
+            auto sz2 = buf1.size*sizeof(uint32_t);
+            auto * _ptr = static_cast<uint32_t*>(aligned_alloc(32, sz2)); 
+            auto *ptr1 = static_cast<uint32_t *>(buf1.ptr);
+            for (size_t idx = 0; idx < buf1.size; idx++) {
+                _ptr[idx] = ptr1[idx]; 
+            }
+            self.splitdims=const_cast<const uint32_t*>(_ptr);
+        })
+        .def("setSplitvalsCopyData", [](mithral_amm<float> &self , py::array_t<int8_t, py::array::c_style>& mf) {
+            py::buffer_info buf1 = mf.request();
+            auto sz2 = buf1.size*sizeof(int8_t);
+            auto * _ptr = static_cast<int8_t*>(aligned_alloc(32, sz2)); 
+            auto *ptr1 = static_cast<int8_t *>(buf1.ptr);
+            for (size_t idx = 0; idx < buf1.size; idx++) {
+                _ptr[idx] = ptr1[idx]; 
+            }
+            self.splitvals=const_cast<const int8_t*>(_ptr);
+        })
+        .def("setEncode_scalesCopyData", [](mithral_amm<float> &self , py::array_t<scale_t, py::array::c_style>& mf) {
+            py::buffer_info buf1 = mf.request();
+            auto sz2 = buf1.size*sizeof(scale_t);
+            auto * _ptr = static_cast<scale_t*>(aligned_alloc(32, sz2)); 
+            auto *ptr1 = static_cast<scale_t *>(buf1.ptr);
+            for (size_t idx = 0; idx < buf1.size; idx++) {
+                _ptr[idx] = ptr1[idx]; 
+            }
+            self.encode_scales=const_cast<const scale_t*>(_ptr);
+        })
+        .def("setEncode_offsetsCopyData", [](mithral_amm<float> &self , py::array_t<offset_t, py::array::c_style>& mf) {
+            py::buffer_info buf1 = mf.request();
+            auto sz2 = buf1.size*sizeof(offset_t);
+            auto * _ptr = static_cast<offset_t*>(aligned_alloc(32, sz2)); 
+            auto *ptr1 = static_cast<offset_t *>(buf1.ptr);
+            for (size_t idx = 0; idx < buf1.size; idx++) {
+                _ptr[idx] = ptr1[idx]; 
+            }
+            self.encode_offsets=const_cast<const offset_t*>(_ptr);
+        })
+
         //// // Doesn't work to prevent segfaults. Is it cause I'm not copying over the right data?
         //// Since these are pointers to const data can't overwrite existing, have to point to entierly new object causing memleak
         // .def("setSplitdimsCopyData", [](mithral_amm<float> &self , py::array_t<uint32_t, py::array::c_style>& mf) {

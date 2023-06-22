@@ -49,14 +49,17 @@ def extract_py_vars(est):
   }
 
 def copy_python_to_amm(py_est, amm):
+  """ Old way of only copying Centroid's data doesn't seem to work, 
+  I got lucky around what did v. didn't get deallocated? 
+  Doesn't matter if this fn is in current file or test_mithral_for_embeddings.py
+  """
   py_vars = extract_py_vars(py_est)
   [c, d,v,eo,es, osum, oscale] = itemgetter('centroids', 'splitdims','splitvals', 'encode_offsets', 'encode_scales', 'out_offset_sum', 'out_scale')(py_vars)
-
   amm.setCentroidsCopyData(c)
-  amm.setSplitdims(d)
-  amm.setSplitvals(v)
-  amm.setEncode_scales(es) 
-  amm.setEncode_offsets(eo)
+  amm.setSplitdimsCopyData(d)
+  amm.setSplitvalsCopyData(v)
+  amm.setEncode_scalesCopyData(es)
+  amm.setEncode_offsetsCopyData(eo)
   amm.out_offset_sum = osum
   amm.out_scale  = oscale
   #amm.setIdxs(.astype(int)) #only for non-dense
@@ -67,7 +70,6 @@ def copy_python_to_amm(py_est, amm):
   #assert np.all(amm.getSplitvals() == v)
   assert np.all(amm.getEncode_scales()==es)
   assert np.all(amm.getEncode_offsets() == eo)
-   
   #del py_est  #to confirm pybind doesn't depend on python memory
 
 def copy_python_luts(est, amm):
