@@ -45,8 +45,8 @@ MetricsSoftmax = namedtuple("MetricsSoftmax", ["np_time", "py_fit_time", "py_est
 
 results=[]
 results_std=[]
-NREPS=15
-NAVG=10
+NREPS=5
+NAVG=4
 for data in itertools.chain(*data_sources):
   print("$$$$$data", data.name)
   for ncodebooks in [4]:

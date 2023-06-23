@@ -6,6 +6,8 @@ import os
 import numpy as np
 # import pathlib as pl
 from sklearn import linear_model
+from sklearn.model_selection import train_test_split
+from pandas import read_parquet
 from scipy import signal
 
 from python.datasets import caltech, sharee, incart, ucr
@@ -21,6 +23,7 @@ _memory = Memory('.', verbose=0)
 _dir = os.path.dirname(os.path.abspath(__file__))
 CIFAR10_DIR = os.path.join(_dir, '..', 'assets', 'cifar10-softmax')
 CIFAR100_DIR = os.path.join(_dir, '..', 'assets', 'cifar100-softmax')
+CLIP_DIR = os.path.join(_dir, '..', 'assets', 'clip', 'embeddings')
 
 
 # ================================================================ types
@@ -701,6 +704,47 @@ def load_cifar100_tasks():
 def load_cifar_tasks():
     return load_cifar10_tasks() + load_cifar100_tasks()
 
+
+# ================================================================ clip
+# from https://laion.ai/blog/laion-400-open-dataset/ 
+#$ mkdir -p experiments/assets/clip/embeddings/text_emb/
+#$ mkdir -p experiments/assets/clip/embeddings/img_emb/
+#$ mkdir -p experiments/assets/clip/embeddings/metadata/
+#$ wget --directory-prefix=experiments/assets/clip/embeddings/text_emb/ https://deploy.laion.ai/8f83b608504d46bb81708ec86e912220/embeddings/text_emb/text_emb_0.npy 
+#$ wget --directory-prefix=experiments/assets/clip/embeddings/img_emb/ https://deploy.laion.ai/8f83b608504d46bb81708ec86e912220/embeddings/img_emb/img_emb_0.npy
+#$ wget --directory-prefix=experiments/assets/clip/embeddings/metadata/ https://deploy.laion.ai/8f83b608504d46bb81708ec86e912220/embeddings/metadata/metadata_0.parquet
+
+def load_clip_text_image():
+    def load_mat(fname):
+        fpath = os.path.join(CLIP_DIR, fname)
+        return np.load(fpath)
+
+    text = load_mat('text_emb/text_emb_0.npy')
+    print('loaded text')
+    img = load_mat('img_emb/img_emb_0.npy')
+    return text,img
+
+def load_clip_text_image_tasks():
+    """ text embeddings are X, image embeddings are W, Y is the class label of X
+    """
+    print("\n\n\nWARN: Didn't finish after 30 minutes\n\n\n")
+    
+    def load_mat(fname):
+        fpath = os.path.join(CLIP_DIR, fname)
+        if fname.endswith('.parquet'):
+            return read_parquet(fpath, 
+                    engine='fastparquet').to_numpy()
+        return np.load(fpath)
+
+    X = load_mat('text_emb/text_emb_0.npy')
+    Y = load_mat('img_emb/img_emb_0.npy')
+    X_train, X_test, Y_train, Y_test = train_test_split(X, Y, test_size=0.2, random_state=42)
+    del X,Y
+    W = load_mat('metadata/metadata_0.parquet')
+    info = {'problem': 'clip',}
+
+    return [MatmulTask(X_train, Y_train, X_test, Y_test, W,
+                       name='Text Image clip', info=info)]
 
 # ================================================================ ucr
 
