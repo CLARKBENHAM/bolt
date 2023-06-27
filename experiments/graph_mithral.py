@@ -49,7 +49,7 @@ NREPS=5
 NAVG=4
 for data in itertools.chain(*data_sources):
   print("$$$$$data", data.name)
-  for ncodebooks in [4]:
+  for ncodebooks in [16]:
     print(f"ncodebooks={ncodebooks}")
     min_trials = []
     for _ in range(NAVG):
