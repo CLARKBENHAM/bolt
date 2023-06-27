@@ -48,6 +48,17 @@ def extract_py_vars(est):
       "out_scale":      np.float32(est.scale),
   }
 
+def extract_mithral_vars(amm):
+  return {
+      "raveled_centroids": np.ravel(amm.getCentroids()),
+      #"raveled_splitvals": np.ravel(amm.getSplitdims()), #not thinking about this
+      "splitdims":  amm.getSplitdims(),
+      "encode_scales": amm.getEncode_scales(), 
+      "encode_offsets": amm.getEncode_offsets(),
+      "out_offset_sum": amm.out_offset_sum,
+      "out_scale":      amm.out_scale,
+  }
+  
 def copy_python_to_amm(py_est, amm):
   """ Old way of only copying Centroid's data doesn't seem to work, 
   I got lucky around what did v. didn't get deallocated? 
@@ -64,6 +75,11 @@ def copy_python_to_amm(py_est, amm):
   amm.out_scale  = oscale
   #amm.setIdxs(.astype(int)) #only for non-dense
   
+  #m_vars = extract_mithral_vars(amm)
+  #[rmc, md,meo,mes, mosum, moscale] = itemgetter('raveled_centroids', 'splitdims','encode_offsets', 'encode_scales', 'out_offset_sum', 'out_scale')(m_vars)
+  #assert all(np.allclose(p,m)
+  #           for p,m in zip([np.ravel(c),  d, eo, es,  osum, oscale],
+  #                                  [rmc, md,meo,mes, mosum, moscale]))
   #assert np.all(amm.getCentroids() == c) #shape wrong
   assert np.all(np.ravel(amm.getCentroids()) == np.ravel(c)) 
   assert np.all(amm.getSplitdims() == d)
