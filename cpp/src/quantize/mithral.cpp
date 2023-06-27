@@ -524,9 +524,17 @@ void mithral_lut_sparse(const float* Q, int nrows, int ncols, int ncodebooks,
     sparse_lut_f32(Q, nrows, ncols, ncodebooks, centroids,
                    idxs, nnz_per_centroid, tmp_lut_f32);
     float tmp_offsets[ncodebooks];
-    mithral_learn_lut_offsets_scales(tmp_lut_f32, nrows, ncodebooks,
+    mithral_learn_lut_offsets_scales(tmp_lut_f32, nrows, ncodebooks, 
         tmp_offsets, out_offset_sum, out_scale);
-    //out_scale was 1.992 vs 0.998 exp, tmp_offsets 0s(?) //If you do -exec p/d out_scale you get 1 out, incorrect summary
+    // //WARN GRIB TEMP TEST TODO uncomment, or fix why this isn't great
+    // float tmp_out_scale = out_scale; // assumes will be set by python
+    // float tmp_out_offset_sum = out_offset_sum;
+    // float& ref_tmp_scale = tmp_out_scale;
+    // float& ref_tmp_offset = tmp_out_offset_sum;
+    // mithral_learn_lut_offsets_scales(tmp_lut_f32, nrows, ncodebooks, 
+    //     tmp_offsets, ref_tmp_offset, ref_tmp_scale);
+    // assert(ref_tmp_scale != out_scale);
+    // assert(ref_tmp_offset != out_offset_sum);
     quantize_luts(tmp_lut_f32, nrows, ncodebooks, tmp_offsets, out_scale, out);
 }
 

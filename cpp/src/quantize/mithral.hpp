@@ -381,6 +381,8 @@ void _compute_offsets_scale_from_mins_maxs(
     const __m256* mins, const __m256* maxs, int ncodebooks,
     float* out_offsets, float& out_offset_sum, float& out_scale)
 {
+    // NOTE: out_offset_sum was -145 v I calculated -140 based on dbg output (but of ints not floats) and python
+
     // we now have the mins and maxes for each codebook; compute offsets
     // for each codebook, then global offset, then largest value - offset
     // auto vmins = mins[0];
@@ -393,7 +395,7 @@ void _compute_offsets_scale_from_mins_maxs(
         out_offsets[c] = offset;
         out_offset_sum += offset;
 
-        // update vector of max vals seen so far
+        // update vector of max difference seen so far
         vmax = _mm256_max_ps(vmax, _mm256_sub_ps(maxs[c], vmin));
     }
     vmax = broadcast_max(vmax);
