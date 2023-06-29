@@ -14,7 +14,7 @@ from collections import namedtuple, defaultdict, Counter
 from functools import partial
 from timeit import default_timer as timer
 import numpy as np
-from sklearn.metrics import r2_score
+from sklearn.metrics import r2_score, roc_curve, roc_auc_score, log_loss
 from operator import attrgetter, itemgetter
 import matplotlib.pyplot as plt
 from matplotlib import colors
@@ -46,18 +46,22 @@ print(os.getpid())
 data_sources = [md.load_cifar10_tasks(), md.load_cifar100_tasks()]
 #data_sources = [md.load_clip_text_image_tasks()] # slow, didn't load after >30 minutes
 text_emb,img_emb = md.load_clip_text_image()
-text_emb = text_emb[:1000]
-img_emb = img_emb[:1000]
+text_emb = text_emb[:1024]
+img_emb = img_emb[:1024]
 MetricsSoftmax = namedtuple("MetricsSoftmax", ["np_time", "py_fit_time", "py_est_time", "py_est_r2", "py_est_per_ix_kept", "copy_to_cpp_time", "cpp_est_time", "cpp_est_r2", "cpp_est_per_ix_kept"])
 
 # How do you measure the accuracy of embedding search?
 # 1. How many of the top-k closest embeddings are in the same class as the query embedding?
 
 
-#%% # Embedding search
-np.random.seed(0)
+#%% # Utils
 columns=["data_name", "mult_name", "k", "num_queries", "avg_per_same", "latency"]
 empty_results = lambda : pd.DataFrame(columns=columns).astype({"data_name": str, "mult_name": str, "k": int, "num_queries": int, "avg_per_same": float})
+seed=75 #=52 give 55% right, about 1/4 give <60% right 
+num_queries=32 #512*8
+NREPS = 5
+ncodebooks=16
+ks=[1,5,10,100]
 
 out_scale= 1 
 out_offset_sum=0
@@ -112,19 +116,29 @@ def _np_dot(  E,Q):
   latency=time.perf_counter() - t
   return mult,latency
   
-def compare_on_emb_queries_by_ix(embeddings, queries,data_name, NREPS,num_queries,ks, ncodebooks=8,lutconsts=-1):
-  """Correct if get the same index of the embedding as the query"""
-  pass
+def summary_plot(results, ncodebooks, name="", save=False):
+  now=datetime.now().strftime("%Y_%m_%d_%H_%M_%S")
+  _dir = os.path.dirname(os.path.abspath(__file__))
+  acc_path=os.path.join(_dir, '..', 'experiments', 'results', 'embeddings', f'accuaracy_{name}_{now}.png')
+  lat_path=os.path.join(_dir, '..', 'experiments', 'results', 'embeddings', f'latency_{name}_{now}.png')
+  
+  g_acc = sns.catplot(data = results, y='avg_per_same', x="mult_name", hue= "data_name",col='k', aspect=0.5, kind='swarm')
+  g_acc.fig.subplots_adjust(top=0.9) 
+  g_acc.fig.suptitle(f"Percent of top-k closest embeddings in same class as query {name}")
+  
+  # no need to seperate by k, all latencies the same
+  g_lat = sns.catplot(data = results.query("k==1"), y='latency', x="mult_name", hue= "data_name", aspect=0.7, kind='swarm')
+  g_lat.fig.subplots_adjust(top=0.9) 
+  g_lat.fig.suptitle(f"Latency of computing {num_queries} queries with {ncodebooks} {name}")
+  if save:
+    g_acc.fig.savefig(acc_path) 
+    print(acc_path)
+    g_lat.fig.savefig(lat_path) 
+    print(lat_path)
 
-seed=75 #=52 give 55% right, about 1/4 give <60% right 
-def compare_on_emb_queries_by_class(embeddings, queries,data_name, NREPS,num_queries,ks, ncodebooks=8,lutconsts=-1):
+#%%  How accurate is getting Class of Cifar-100
+def compare_on_emb_queries_by_class(embeddings, queries,data_name, NREPS,num_queries,ks, ncodebooks=8,lutconsts=-1,seed=seed):
   """ Where the class is the largest ix of row of embedding"""
-  global seed
-  results = empty_results() 
-
-  embeddings_lengths = np.linalg.norm(embeddings, axis=1)
-  #embeddings_class=np.apply_along_axis(np.argmax, 1, queries)
-
   def calc_avg_per_same(k, closest_embeddings_ixs, query_classes):
     """Class is column ix which has largest value in row.
     For each query, get the k closest embeddings and see how many are in the same class as the query.
@@ -138,13 +152,13 @@ def compare_on_emb_queries_by_class(embeddings, queries,data_name, NREPS,num_que
                    range(num_queries))
                )/num_queries
 
+  results = empty_results() 
+  embeddings_lengths = np.linalg.norm(embeddings, axis=1)
+
   task,est = _setup_task_est(embeddings, queries, ncodebooks, lutconsts)
   
-  #for mult_method, mult_name in ((partial(mithral_mult,task), 'mithral'),):
   for mult_method, mult_name in ((_np_dot, 'numpy'), (partial(est_mult, est), 'py_est'), (partial(mithral_mult,task), 'cpp_mithral')):
-  #for mult_method, mult_name in ((_np_dot, 'numpy'), (mithral_mult, 'mithral')):
     np.random.seed(seed)
-    seed += 1
     avg_per_by_k=defaultdict(list)
     for _ in range(NREPS):
       rand_ix=np.random.choice(queries.shape[0], num_queries, replace=True)
@@ -161,7 +175,7 @@ def compare_on_emb_queries_by_class(embeddings, queries,data_name, NREPS,num_que
         avg_per_same = calc_avg_per_same(k, closest_embeddings_ixs, search_classes)
         if k == ks[-1]:
           if avg_per_same <= 60:
-              print("BAD", seed)
+              print("BAD")
           print(f"Avg Percent of top-{k} in query's class {avg_per_same:.2f}% for {data_name} by method {mult_name} on {num_queries} queries")
         avg_per_by_k[k].append(avg_per_same)
     rep_of_avgs = {k:f"{sum(avgs)/len(avgs):.2f} SD {np.std(avgs):.2f}" for k, avgs in avg_per_by_k.items()}
@@ -178,49 +192,15 @@ def compare_on_emb_queries_by_class(embeddings, queries,data_name, NREPS,num_que
   results['mult_name'] = results.mult_name.astype('category')
   return results
 
-def summary_plot(results, ncodebooks, name="", save=False):
-  now=datetime.now().strftime("%Y_%m_%d_%H_%M_%S")
-  _dir = os.path.dirname(os.path.abspath(__file__))
-  acc_path=os.path.join(_dir, '..', 'experiments', 'results', 'embeddings', f'accuaracy_{name}_{now}.png')
-  lat_path=os.path.join(_dir, '..', 'experiments', 'results', 'embeddings', f'latency_{name}_{now}.png')
-  
-  g_acc = sns.catplot(data = results, y='avg_per_same', x="mult_name", hue= "data_name",col='k', aspect=0.5, kind='swarm')
-  g_acc.fig.subplots_adjust(top=0.9) 
-  g_acc.fig.suptitle(f"Percent of top-k closest embeddings in same class as query {name}")
-  
-  # no need to seperate by k, all latencies the same
-  g_lat = sns.catplot(data = results.query("k==1"), y='latency', x="mult_name", hue= "data_name", aspect=0.5, kind='swarm')
-  g_lat.fig.subplots_adjust(top=0.9) 
-  g_lat.fig.suptitle(f"Latency of computing {num_queries} queries with {ncodebooks} {name}")
-  if save:
-    g_acc.fig.savefig(acc_path) 
-    print(acc_path)
-    g_lat.fig.savefig(lat_path) 
-    print(lat_path)
-  
-num_queries=32 #512*8
-NREPS = 5*100
-ncodebooks=16
-if True: 
-  ks=[1,5,10,100,1000]
-  name='clip_text_q_img_ix'
-  text_emb_subset = text_emb[np.random.choice(text_emb.shape[0], 10000, replace=True)]
-  # use by ix
-  results=compare_on_emb_queries_by_class(img_emb, text_emb_subset,name, NREPS, num_queries,ks,ncodebooks=8)
-  summary_plot(results, ncodebooks, name=name, save=True)
-else:
-  ks=[1,5,10,100]
-  results = empty_results() 
-  for data in itertools.chain(*data_sources[1:]):
-    [W_test,W_train, X_test, X_train, Y_test, Y_train] = attrgetter('W_test','W_train', 'X_test', 'X_train', 'Y_test', 'Y_train')(data)
-    
-    #ncodebooks=2**math.floor(np.log2(Y_train.shape[1])) #>16 errors on cifar100
-    queries = Y_test[:-(len(Y_test)%32)]
-    embeddings = Y_train[:-(len(Y_train)%32)]
-    new=compare_on_emb_queries_by_class(embeddings, queries, data.name, NREPS, num_queries,ks,ncodebooks=ncodebooks)
-    results = pd.concat([new, results],ignore_index=True)
-  summary_plot(results, ncodebooks, name=data.name, save=True)
-#%% ###     Scrap
+results = empty_results() 
+for data in itertools.chain(*data_sources[1:]):
+  [W_test,W_train, X_test, X_train, Y_test, Y_train] = attrgetter('W_test','W_train', 'X_test', 'X_train', 'Y_test', 'Y_train')(data)
+  queries = Y_test[:-(len(Y_test)%32)]
+  embeddings = Y_train[:-(len(Y_train)%32)]
+  new=compare_on_emb_queries_by_class(embeddings, queries, data.name, NREPS, num_queries,ks,ncodebooks=ncodebooks, seed=seed)
+  results = pd.concat([new, results],ignore_index=True)
+summary_plot(results, ncodebooks, name=data.name, save=True)
+
 #results.to_csv("py_v_cpp_mithral_for_acc_on_cifar100.csv")
 
 gb = results.groupby(['mult_name', 'k'])['avg_per_same']
@@ -261,6 +241,129 @@ print(
 # 100    0.105150
 
 #%%
+def compare_on_emb_retrieval(embeddings, queries,data_name, NREPS,num_queries,ks, ncodebooks=8,lutconsts=-1, seed=seed):
+  """
+  How often the embedding matching a query (as determined by ix) retrieved in top k
+  """
+  results = empty_results() 
+
+  embeddings_lengths = np.linalg.norm(embeddings, axis=1)
+
+  def calc_avg_right_returned(k, closest_embeddings_ixs, query_classes):
+    """
+    How often the embedding matching a query (as determined by ix) retrieved in top k
+    """
+    return 100*np.mean([np.sum(closest_embeddings_ixs[-k:, q_ix]==query_classes[q_ix])
+                    for q_ix in range(query_classes.shape[0])])
+    
+  task,est = _setup_task_est(embeddings, queries, ncodebooks, lutconsts)
+  
+  #for mult_method, mult_name in ((partial(mithral_mult,task), 'mithral'),):
+  for mult_method, mult_name in ((_np_dot, 'numpy'), (partial(est_mult, est), 'py_est'), (partial(mithral_mult,task), 'cpp_mithral')):
+    np.random.seed(seed)
+    avg_per_by_k=defaultdict(list)
+    for _ in range(NREPS):
+      rand_ix = np.arange(num_queries) #np.random.choice(queries.shape[0], num_queries, replace=True)
+      search = queries[rand_ix, :]
+      search_classes = rand_ix
+      search_lengths = np.linalg.norm(search, axis=1)
+      dot_es, latency=mult_method(embeddings,search.T)
+      normalized_cosine = np.apply_along_axis(lambda row: row/search_lengths, 
+                                              1,
+                                              np.apply_along_axis(lambda col: col/(embeddings_lengths), 
+                                                0, 
+                                                dot_es))
+      closest_embeddings_ixs = np.argsort(normalized_cosine, axis=0)
+      
+      for k in ks:
+        avg_per_same = calc_avg_right_returned(k, closest_embeddings_ixs, search_classes)
+        if k == ks[0]:
+          print(f"Avg Percent top-{k} found query's matching embedding {avg_per_same:.2f}% for {data_name} by method {mult_name} on {num_queries} queries")
+        avg_per_by_k[k].append(avg_per_same)
+    rep_of_avgs = {k:f"{sum(avgs)/len(avgs):.2f} SD {np.std(avgs):.2f}" for k, avgs in avg_per_by_k.items()}
+    print(f"For {data_name} computed by {mult_name} Over {NREPS} reps of {num_queries} queries by k")
+    pprint(rep_of_avgs)
+    
+    new = pd.DataFrame([[data_name, mult_name, k, num_queries, avg_per_same, latency] 
+                        for k, avgs in avg_per_by_k.items()
+                        for avg_per_same in avgs], 
+                       columns=columns)
+    results=pd.concat([results,new], ignore_index=True)
+        
+  results['data_name'] = results.data_name.astype('category')
+  results['mult_name'] = results.mult_name.astype('category')
+  return results
+
+name='clip_text_q_img_ix'
+results=compare_on_emb_retrieval(img_emb, img_emb,name, NREPS, num_queries,ks,ncodebooks=ncodebooks)
+summary_plot(results, ncodebooks, name=name, save=True)
+
+#%%
+def compare_dist_ret_from_true(embeddings, queries,data_name, num_queries, ncodebooks=8,lutconsts=-1, seed=seed):
+
+  """
+    Using different methods, how far are returned embeddings from the true embedding
+    The true embedding is the one that shares an index with the query the query
+  """
+  embeddings_lengths = np.linalg.norm(embeddings, axis=1)
+  task,est = _setup_task_est(embeddings, queries, ncodebooks, lutconsts)
+  
+  #for mult_method, mult_name in ((_np_dot, 'numpy'), (partial(est_mult, est), 'py_est'), (partial(mithral_mult,task), 'cpp_mithral')):
+  for mult_method, mult_name in ((partial(est_mult, est), 'py_est'), (partial(mithral_mult,task), 'cpp_mithral')):
+    np.random.seed(seed)
+    rand_ix = np.arange(num_queries) #np.random.choice(queries.shape[0], num_queries, replace=True)
+    search = queries[rand_ix, :]
+    search_classes = rand_ix
+    search_lengths = np.linalg.norm(search, axis=1)
+    dot_es, latency=mult_method(embeddings,search.T)
+    closest_embeddings_ixs = np.argsort( # argsort is run separately for each query
+                          np.apply_along_axis(lambda col: col/embeddings_lengths, 
+                                              0, 
+                                              dot_es),
+                          axis=0)
+    ret_embs =  embeddings[closest_embeddings_ixs[-1, :]]
+    true_embs = embeddings[search_classes]
+    
+    pairs = [(ret_embs[i], true_embs[i]) for i in range(ret_embs.shape[0])]
+    cal_cos_s = lambda pair: np.dot(pair[0], pair[1])/(np.linalg.norm(pair[0])*np.linalg.norm(pair[1]))
+    cal_l2_d = lambda pair: np.linalg.norm(pair[0]-pair[1]) 
+    cal_l1_d = lambda pair: np.linalg.norm(pair[0]-pair[1], ord=1) 
+    
+    print(f"For returned vector vs. query vector by method {mult_name} of {data_name} dataset on {num_queries} queries") 
+    avg_cos_sim = sum(map(cal_cos_s, pairs))/len(pairs)
+    print(f"Avg cosine similarity {avg_cos_sim} ") 
+    avg_l2_dis = sum(map(cal_l2_d, pairs))/len(pairs)
+    print(f"Avg L2-distance  {avg_l2_dis}") 
+    avg_l1_dis = sum(map(cal_l1_d, pairs))/len(pairs)
+    print(f"Avg manhattan distance {avg_l1_dis}") 
+
+compare_dist_ret_from_true(img_emb, img_emb,"clip_img_emb_queried_by_img_emb",  num_queries,ncodebooks=ncodebooks)
+compare_dist_ret_from_true(img_emb, text_emb,"clip_img_emb_queried_by_text_emb",  num_queries,ncodebooks=ncodebooks)
+compare_dist_ret_from_true(text_emb, text_emb,"clip_text_emb_queried_by_text_emb",  num_queries,ncodebooks=ncodebooks)
+
+#%%  ###     Scrap
+
+def logloss_of_softmax(normalized_cosine, y_true):
+  # This isn't a mathemtatically valid way to get probabilities 
+  softmax = np.exp(normalized_cosine)/np.sum(np.exp(normalized_cosine), axis=0, keepdims=True)
+  assigned_true_prob = softmax[y_true] 
+  binary_softmax = np.stack([1-assigned_true_prob, assigned_true_prob],axis=1)
+  onezeros = np.stack([np.zeros((num_queries)), np.ones((num_queries))],axis=1)
+  logloss = log_loss(onezeros, binary_softmax)
+  return logloss
+#%%
+
+rand_ix = np.random.choice(text_emb.shape[0], 10000, replace=True)
+text_emb_subset = text_emb[rand_ix]
+text_emb_subset = text_emb[rand_ix]
+
+y_true = np.array([search_classes==i for i in range(queries.shape[0])])
+      
+#tpr, fpr, t = roc_curve(np.ones((num_queries)), assigned_true_prob)
+#auc = roc_auc_score(np.ones((num_queries)), assigned_true_prob)
+#plt.plot(fpr,tpr,label=f"{mult_name}, auc={auc}")
+      
+
 k=100
 closest_embeddings_ix = np.argsort((embeddings @ query.T).reshape(-1) / embeddings_lengths)
 ct= defaultdict(int)

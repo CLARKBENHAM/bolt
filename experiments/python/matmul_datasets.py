@@ -718,7 +718,7 @@ def load_clip_text_image():
     def load_mat(fname):
         fpath = os.path.join(CLIP_DIR, fname)
         return np.load(fpath)
-
+    
     text = load_mat('text_emb/text_emb_0.npy')
     print('loaded text')
     img = load_mat('img_emb/img_emb_0.npy')
@@ -726,6 +726,12 @@ def load_clip_text_image():
 
 def load_clip_text_image_tasks():
     """ text embeddings are X, image embeddings are W, Y is the class label of X
+    One metadata row: 
+    array(['000000033',
+       '2 bed Terraced property to rent in Crofts Lane, Ross-on-Wye',
+       'UNLIKELY', 0.3332441747188568, '?',
+       'http://media.rightmove.co.uk/dir/87k/86030/41964130/86030_4197229_IMG_00_0000_max_214x143.jpg',
+       33, 19848, 'success', nan, 256, 256, '{}', 191, 143], dtype=object)
     """
     print("\n\n\nWARN: Didn't finish after 30 minutes\n\n\n")
     
