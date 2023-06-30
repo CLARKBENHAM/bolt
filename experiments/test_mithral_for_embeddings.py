@@ -55,8 +55,11 @@ MetricsSoftmax = namedtuple("MetricsSoftmax", ["np_time", "py_fit_time", "py_est
 
 
 #%% # Utils
-columns=["data_name", "mult_name", "k", "num_queries", "avg_per_same", "latency"]
-empty_results = lambda : pd.DataFrame(columns=columns).astype({"data_name": str, "mult_name": str, "k": int, "num_queries": int, "avg_per_same": float})
+acc_columns=["data_name", "mult_name", "k", "num_queries", "avg_per_same", "latency"]
+empty_acc_results = lambda : pd.DataFrame(columns=acc_columns).astype({"data_name": str, "mult_name": str, "k": int, "num_queries": int, "avg_per_same": float, "latency": float})
+dist_types = {"data_name": str, "mult_name": str, "num_queries": int, "ncodebooks": int, "cosine": float, "l2": float, "l1": float, "latency": float}
+dist_columns = list(dist_types.keys())
+empty_dist_results = lambda : pd.DataFrame(columns=dist_columns).astype(dist_types)
 seed=75 #=52 give 55% right, about 1/4 give <60% right 
 num_queries=32 #512*8
 NREPS = 5
@@ -116,18 +119,18 @@ def _np_dot(  E,Q):
   latency=time.perf_counter() - t
   return mult,latency
   
-def summary_plot(results, ncodebooks, name="", save=False):
+def summary_plot_acc(acc_results, ncodebooks, name="", save=False):
   now=datetime.now().strftime("%Y_%m_%d_%H_%M_%S")
   _dir = os.path.dirname(os.path.abspath(__file__))
   acc_path=os.path.join(_dir, '..', 'experiments', 'results', 'embeddings', f'accuaracy_{name}_{now}.png')
   lat_path=os.path.join(_dir, '..', 'experiments', 'results', 'embeddings', f'latency_{name}_{now}.png')
   
-  g_acc = sns.catplot(data = results, y='avg_per_same', x="mult_name", hue= "data_name",col='k', aspect=0.5, kind='swarm')
+  g_acc = sns.catplot(data = acc_results, y='avg_per_same', x="mult_name", hue= "data_name",col='k', aspect=0.5, kind='swarm')
   g_acc.fig.subplots_adjust(top=0.9) 
   g_acc.fig.suptitle(f"Percent of top-k closest embeddings in same class as query {name}")
   
   # no need to seperate by k, all latencies the same
-  g_lat = sns.catplot(data = results.query("k==1"), y='latency', x="mult_name", hue= "data_name", aspect=0.7, kind='swarm')
+  g_lat = sns.catplot(data = acc_results.query("k==1"), y='latency', x="mult_name", hue= "data_name", aspect=0.7, kind='swarm')
   g_lat.fig.subplots_adjust(top=0.9) 
   g_lat.fig.suptitle(f"Latency of computing {num_queries} queries with {ncodebooks} {name}")
   if save:
@@ -136,9 +139,54 @@ def summary_plot(results, ncodebooks, name="", save=False):
     g_lat.fig.savefig(lat_path) 
     print(lat_path)
 
+def summary_plot_dist(dist_results, save=False):
+  ncodebooks = dist_results['ncodebooks'].unique()
+  assert(len(ncodebooks)==1)
+  ncodebooks = ncodebooks[0]
+  num_queries = dist_results['num_queries'].unique()
+  assert(len(num_queries)==1)
+  num_queries = num_queries[0]
+  lat_results = dist_results.iloc[::num_queries, :]# unique latencies
+  
+  write_data = [] 
+  fig = plt.figure()
+  lat_ax = sns.swarmplot(data = lat_results , x="mult_name" ,y='latency' ,  hue= "data_name", legend=False)
+  sns.boxplot(data = lat_results , x="mult_name", y='latency' , hue= "data_name",
+          ax=lat_ax,
+          showcaps=False,boxprops={'facecolor':'None'},
+          showfliers=False,whiskerprops={'linewidth':0},
+          )
+  plt.suptitle(f"Latency of computing {num_queries} queries with {ncodebooks} codebooks")
+  write_data += [(fig, 'latency')]
+  plt.show()
+  
+  for y in ['cosine', 'l2', 'l1']:
+    fig = plt.figure()
+    g_ax = sns.swarmplot(data = dist_results , x="mult_name", y=y , hue= "data_name" , size=3, alpha=0.7, legend=False)
+    sns.boxplot(data = dist_results , x="mult_name" , y=y, hue= "data_name",
+            ax=g_ax,
+            showcaps=False,boxprops={'facecolor':'None'},
+            showfliers=False,whiskerprops={'linewidth':0.5}, linewidth=0.7,
+            )
+    plt.suptitle(f"{y} {'similarity' if y=='cosine' else 'distance'} of correct and returned embedding ({ncodebooks} codebooks)")
+    plt.gca().legend().set_visible(False)
+    write_data += [(fig, y)]
+    plt.show()
+  
+  if save:
+    now=datetime.now().strftime("%Y_%m_%d_%H_%M_%S")
+    _dir = os.path.dirname(os.path.abspath(__file__))
+    for g, name in write_data:
+      path=os.path.join(_dir, '..', 'experiments', 'results', 'embeddings', f'distance_comp_{name}_{now}.png')
+      g.savefig(path) 
+      print(path)
+
 #%%  How accurate is getting Class of Cifar-100
 def compare_on_emb_queries_by_class(embeddings, queries,data_name, NREPS,num_queries,ks, ncodebooks=8,lutconsts=-1,seed=seed):
-  """ Where the class is the largest ix of row of embedding"""
+  """ 
+  Where the class is the largest ix of row of embedding
+  How often in top K is the correct vector returned?
+  """
   def calc_avg_per_same(k, closest_embeddings_ixs, query_classes):
     """Class is column ix which has largest value in row.
     For each query, get the k closest embeddings and see how many are in the same class as the query.
@@ -152,7 +200,7 @@ def compare_on_emb_queries_by_class(embeddings, queries,data_name, NREPS,num_que
                    range(num_queries))
                )/num_queries
 
-  results = empty_results() 
+  results = empty_acc_results() 
   embeddings_lengths = np.linalg.norm(embeddings, axis=1)
 
   task,est = _setup_task_est(embeddings, queries, ncodebooks, lutconsts)
@@ -185,25 +233,25 @@ def compare_on_emb_queries_by_class(embeddings, queries,data_name, NREPS,num_que
     new = pd.DataFrame([[data_name, mult_name, k, num_queries, avg_per_same, latency] 
                         for k, avgs in avg_per_by_k.items()
                         for avg_per_same in avgs], 
-                       columns=columns)
+                       columns=acc_columns)
     results=pd.concat([results,new], ignore_index=True)
         
   results['data_name'] = results.data_name.astype('category')
   results['mult_name'] = results.mult_name.astype('category')
   return results
 
-results = empty_results() 
+acc_results = empty_acc_results() 
 for data in itertools.chain(*data_sources[1:]):
   [W_test,W_train, X_test, X_train, Y_test, Y_train] = attrgetter('W_test','W_train', 'X_test', 'X_train', 'Y_test', 'Y_train')(data)
   queries = Y_test[:-(len(Y_test)%32)]
   embeddings = Y_train[:-(len(Y_train)%32)]
   new=compare_on_emb_queries_by_class(embeddings, queries, data.name, NREPS, num_queries,ks,ncodebooks=ncodebooks, seed=seed)
-  results = pd.concat([new, results],ignore_index=True)
-summary_plot(results, ncodebooks, name=data.name, save=True)
+  acc_results = pd.concat([new, acc_results],ignore_index=True)
+summary_plot_acc(acc_results, ncodebooks, name=data.name, save=True)
 
-#results.to_csv("py_v_cpp_mithral_for_acc_on_cifar100.csv")
+#acc_results.to_csv("py_v_cpp_mithral_for_acc_on_cifar100.csv")
 
-gb = results.groupby(['mult_name', 'k'])['avg_per_same']
+gb = acc_results.groupby(['mult_name', 'k'])['avg_per_same']
 mn=gb.mean().unstack('k').loc[['numpy', 'cpp_mithral', 'py_est']]
 sd=gb.std().unstack('k').loc[['numpy', 'cpp_mithral', 'py_est']]
 se=gb.sem().unstack('k').loc[['numpy', 'cpp_mithral', 'py_est']]
@@ -233,7 +281,7 @@ print(
 # numpy        0.232490  0.200318  0.194033  0.194577
 # cpp_mithral  0.285198  0.235209  0.223531  0.210905
 # py_est       0.293132  0.233594  0.221114  0.206848
-# # Z score of py_est's standard error being larger than cpp_mithral 
+# # Z score of py_est's mean being larger than cpp_mithral 
 # k
 # 1      2.490955
 # 5      2.202137
@@ -245,7 +293,7 @@ def compare_on_emb_retrieval(embeddings, queries,data_name, NREPS,num_queries,ks
   """
   How often the embedding matching a query (as determined by ix) retrieved in top k
   """
-  results = empty_results() 
+  results = empty_acc_results() 
 
   embeddings_lengths = np.linalg.norm(embeddings, axis=1)
 
@@ -287,19 +335,19 @@ def compare_on_emb_retrieval(embeddings, queries,data_name, NREPS,num_queries,ks
     new = pd.DataFrame([[data_name, mult_name, k, num_queries, avg_per_same, latency] 
                         for k, avgs in avg_per_by_k.items()
                         for avg_per_same in avgs], 
-                       columns=columns)
+                       columns=acc_columns)
     results=pd.concat([results,new], ignore_index=True)
         
   results['data_name'] = results.data_name.astype('category')
   results['mult_name'] = results.mult_name.astype('category')
   return results
 
-name='clip_text_q_img_ix'
-results=compare_on_emb_retrieval(img_emb, img_emb,name, NREPS, num_queries,ks,ncodebooks=ncodebooks)
-summary_plot(results, ncodebooks, name=name, save=True)
+name='text_queries_img_ix'
+acc_results=compare_on_emb_retrieval(img_emb, text_emb,name, NREPS, num_queries,ks,ncodebooks=ncodebooks)
+summary_plot_acc(acc_results, ncodebooks, name=name, save=True)
 
 #%%
-def compare_dist_ret_from_true(embeddings, queries,data_name, num_queries, ncodebooks=8,lutconsts=-1, seed=seed):
+def compare_dist_ret_from_true(embeddings, queries,data_name, NREPS, num_queries, ncodebooks=8,lutconsts=-1, seed=seed):
 
   """
     Using different methods, how far are returned embeddings from the true embedding
@@ -307,39 +355,54 @@ def compare_dist_ret_from_true(embeddings, queries,data_name, num_queries, ncode
   """
   embeddings_lengths = np.linalg.norm(embeddings, axis=1)
   task,est = _setup_task_est(embeddings, queries, ncodebooks, lutconsts)
+  results = empty_dist_results()
   
-  #for mult_method, mult_name in ((_np_dot, 'numpy'), (partial(est_mult, est), 'py_est'), (partial(mithral_mult,task), 'cpp_mithral')):
-  for mult_method, mult_name in ((partial(est_mult, est), 'py_est'), (partial(mithral_mult,task), 'cpp_mithral')):
+  for mult_method, mult_name in ((_np_dot, 'numpy'), (partial(est_mult, est), 'py_est'), (partial(mithral_mult,task), 'cpp_mithral')):
+  #for mult_method, mult_name in ((partial(est_mult, est), 'py_est'), (partial(mithral_mult,task), 'cpp_mithral')):
     np.random.seed(seed)
-    rand_ix = np.arange(num_queries) #np.random.choice(queries.shape[0], num_queries, replace=True)
-    search = queries[rand_ix, :]
-    search_classes = rand_ix
-    search_lengths = np.linalg.norm(search, axis=1)
-    dot_es, latency=mult_method(embeddings,search.T)
-    closest_embeddings_ixs = np.argsort( # argsort is run separately for each query
-                          np.apply_along_axis(lambda col: col/embeddings_lengths, 
-                                              0, 
-                                              dot_es),
-                          axis=0)
-    ret_embs =  embeddings[closest_embeddings_ixs[-1, :]]
-    true_embs = embeddings[search_classes]
-    
-    pairs = [(ret_embs[i], true_embs[i]) for i in range(ret_embs.shape[0])]
-    cal_cos_s = lambda pair: np.dot(pair[0], pair[1])/(np.linalg.norm(pair[0])*np.linalg.norm(pair[1]))
-    cal_l2_d = lambda pair: np.linalg.norm(pair[0]-pair[1]) 
-    cal_l1_d = lambda pair: np.linalg.norm(pair[0]-pair[1], ord=1) 
-    
-    print(f"For returned vector vs. query vector by method {mult_name} of {data_name} dataset on {num_queries} queries") 
-    avg_cos_sim = sum(map(cal_cos_s, pairs))/len(pairs)
-    print(f"Avg cosine similarity {avg_cos_sim} ") 
-    avg_l2_dis = sum(map(cal_l2_d, pairs))/len(pairs)
-    print(f"Avg L2-distance  {avg_l2_dis}") 
-    avg_l1_dis = sum(map(cal_l1_d, pairs))/len(pairs)
-    print(f"Avg manhattan distance {avg_l1_dis}") 
+    cos_sim= []
+    l2_dis = []
+    l1_dis = []
+    latencies = []
+    for _ in range(NREPS):
+      rand_ix = np.random.choice(queries.shape[0], num_queries, replace=True)
+      search = queries[rand_ix, :]
+      search_classes = rand_ix
+      dot_es, latency=mult_method(embeddings,search.T)
+      closest_embeddings_ixs = np.argsort( # argsort is run separately for each query
+                            np.apply_along_axis(lambda col: col/embeddings_lengths, 
+                                                0, 
+                                                dot_es),
+                            axis=0)
+      ret_embs =  embeddings[closest_embeddings_ixs[-1, :]]
+      true_embs = embeddings[search_classes]
+      
+      pairs = [(ret_embs[i], true_embs[i]) for i in range(ret_embs.shape[0])]
+      cal_cos_s = lambda pair: np.dot(pair[0], pair[1])/(np.linalg.norm(pair[0])*np.linalg.norm(pair[1]))
+      cal_l2_d = lambda pair: np.linalg.norm(pair[0]-pair[1]) 
+      cal_l1_d = lambda pair: np.linalg.norm(pair[0]-pair[1], ord=1) 
+      cos_sim+= list(map(cal_cos_s, pairs))
+      l2_dis += list(map(cal_l2_d, pairs)) 
+      l1_dis += list(map(cal_l1_d, pairs)) 
+      latencies += [latency]*len(pairs)
 
-compare_dist_ret_from_true(img_emb, img_emb,"clip_img_emb_queried_by_img_emb",  num_queries,ncodebooks=ncodebooks)
-compare_dist_ret_from_true(img_emb, text_emb,"clip_img_emb_queried_by_text_emb",  num_queries,ncodebooks=ncodebooks)
-compare_dist_ret_from_true(text_emb, text_emb,"clip_text_emb_queried_by_text_emb",  num_queries,ncodebooks=ncodebooks)
+    new = pd.DataFrame([[data_name, mult_name, num_queries, ncodebooks, cos, l2,l1, latency] 
+                        for cos, l2,l1,latency in zip(cos_sim, l2_dis, l1_dis, latencies)],
+                       columns=dist_columns)
+    print(f"Method {mult_name} compared returned vs. query of {data_name} dataset on {num_queries} queries") 
+    print(new[['cosine', 'l2', 'l1', 'latency']].mean().rename('mean'))
+    print(new[['cosine', 'l2', 'l1', 'latency']].std().rename('std'))
+    results=pd.concat([results,new], ignore_index=True)
+  return results
+
+dist_results = empty_dist_results() 
+for e,q, name in [(img_emb, img_emb, "img_queries_img"),
+                  (img_emb, text_emb, "text_queries_img"),
+                  (text_emb, text_emb, "text_queries_text")]:
+  new = compare_dist_ret_from_true(e, q , name, NREPS*20, num_queries , ncodebooks=ncodebooks)
+  dist_results = pd.concat([new, dist_results],ignore_index=True)
+
+summary_plot_dist(dist_results, save=True)
 
 #%%  ###     Scrap
 
@@ -351,6 +414,26 @@ def logloss_of_softmax(normalized_cosine, y_true):
   onezeros = np.stack([np.zeros((num_queries)), np.ones((num_queries))],axis=1)
   logloss = log_loss(onezeros, binary_softmax)
   return logloss
+
+def plot_dists_togther(results):
+  result_columns = ['cosine', 'l2', 'l1', 'latency']
+  metadata_columns = [c for c in dist_columns if c not in  result_columns]
+  data = pd.DataFrame(columns = metadata_columns + ['measure', 'value'])
+  for res_col in result_columns:
+    sub = results[metadata_columns + [res_col]].copy()
+    sub['measure'] = res_col 
+    sub['value'] = sub[res_col]
+    del sub[res_col]
+    data = pd.concat([data, sub], ignore_index=True)
+  
+  g = sns.FacetGrid(data, col="measure", height=4, aspect=.5)
+  g.map(sns.barplot, "mult_name", "value")
+  
+  #  g_cos = sns.catplot(data = results , y='cosine'  , x="mult_name" , hue= "data_name" , kind='swarm', size=3, alpha=0.3, legend=False)
+  #  g_l2  =  sns.catplot(data = results , y='l2'      , x="mult_name" , hue= "data_name" , kind='swarm', size=3, alpha=0.3, legend=False)
+  #  g_l1  = sns.catplot(data = results , y='l1'      , x="mult_name" , hue= "data_name" , kind='swarm', size=3, alpha=0.3, legend=False)
+  
+
 #%%
 
 rand_ix = np.random.choice(text_emb.shape[0], 10000, replace=True)
