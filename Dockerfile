@@ -1,5 +1,5 @@
 #Based on pytorch extension script dockerfile: https://github.com/pytorch/extension-script
-FROM ubuntu:18.04
+FROM ubuntu:20.04
 
 # so tzdata doesn't hang
 ENV TZ=America/Los_Angeles
@@ -31,8 +31,9 @@ RUN ln -s ~/local/miniconda/bin/activate /activate
 ENV PATH=$PATH:/root/local/miniconda/bin/  
 # Install PyTorch
 RUN . /activate && \
+	conda update -n base -c defaults conda --repodata-fn=repodata.json && \
 	conda install python=3.8 && \
-	conda install pytorch torchvision torchaudio cpuonly -c pytorch-nightly
+	conda install pytorch torchvision torchaudio cpuonly -c pytorch
 
 # Download LibTorch # why used Pre-cxx11 ABI before?
 RUN wget https://download.pytorch.org/libtorch/cpu/libtorch-cxx11-abi-shared-with-deps-2.0.1%2Bcpu.zip && \
