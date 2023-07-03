@@ -1,13 +1,13 @@
 {
 	"folders": [
 		{
-			"name": "extension-script",
-			"uri": "vscode-remote://dev-container+adoring_visvesvaraya/home/cbenham/extension-script"
-		},
-		{
 			"name": "bolt",
 			"uri": "vscode-remote://dev-container+adoring_visvesvaraya/home/cbenham/bolt"
 		}
+		{
+			"name": "extension-script",
+			"uri": "vscode-remote://dev-container+adoring_visvesvaraya/home/cbenham/extension-script"
+		},
 	],
 	"remoteAuthority": "dev-container+adoring_visvesvaraya",
 	"settings": {
