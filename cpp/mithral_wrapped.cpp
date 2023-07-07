@@ -135,7 +135,7 @@ PYBIND11_MODULE(mithral_wrapped, m) {
         //can only write PyBind functions that don't take in data
         .def("scan_test"                    , &mithral_amm<float>::scan_test)
         .def("zip_bolt_colmajor_only"       , &mithral_amm<float>::zip_bolt_colmajor_only)
-        .def("scan_test_zipped"                    , &mithral_amm<float>::scan_test_zipped)
+        .def("scan_test_zipped"             , &mithral_amm<float>::scan_test_zipped)
         // ctor params
         .def_readwrite("N"                  , &mithral_amm<float>::N)
         .def_readwrite("D"                  , &mithral_amm<float>::D)

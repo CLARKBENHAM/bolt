@@ -60,7 +60,7 @@ empty_acc_results = lambda : pd.DataFrame(columns=acc_columns).astype({"data_nam
 dist_types = {"data_name": str, "mult_name": str, "num_queries": int, "ncodebooks": int, "cosine": float, "l2": float, "l1": float, "latency": float}
 dist_columns = list(dist_types.keys())
 empty_dist_results = lambda : pd.DataFrame(columns=dist_columns).astype(dist_types)
-seed=75 #=52 give 55% right, about 1/4 give <60% right 
+seed=75
 num_queries=32 #512*8
 NREPS = 5
 ncodebooks=16
@@ -80,24 +80,29 @@ def _setup_task_est(embeddings, queries, ncodebooks, lutconsts):
   task.X=embeddings
   copy_python_to_amm(est, task.amm)
   copy_python_luts(est, task.amm)
-  print('made scale', task.amm.out_scale, task.amm.out_offset_sum)
-  global out_scale, out_offset_sum
-  out_scale = task.amm.out_scale
-  out_offset_sum=task.amm.out_offset_sum
+  task.encode()
+  #print('made scale', task.amm.out_scale, task.amm.out_offset_sum)
+  #global out_scale, out_offset_sum
+  #out_scale = task.amm.out_scale
+  #out_offset_sum=task.amm.out_offset_sum
   return task,est 
   
 def mithral_mult(task, E,Q):
   D,M = Q.shape
   task.Q=Q
   task.amm.M = M
+  #task.amm.out_scale = out_scale
+  #task.amm.out_offset_sum = out_offset_sum 
+  scale,sum = task.amm.out_scale, task.amm.out_offset_sum
   t = time.perf_counter()
-  task.amm.out_scale = out_scale
-  task.amm.out_offset_sum = out_offset_sum 
-  task.run_matmul(True) # if true this changes out_scale and out_offset_sum; possibly to invalid/bad reasons TODO
+  #task.run_matmul(True) # if true this changes out_scale and out_offset_sum; possibly to invalid/bad reasons TODO
+  #task.lut()
+  task.scan()
   Y_hat=task.amm.out_mat[:,:M] #raw out_mat if just care about relative order for predicting output. slice for test shape used
   Y_hat=(Y_hat.astype(np.uint16)*task.amm.ncodebooks/task.amm.out_scale) + task.amm.out_offset_sum
   #Y_hat=(Y_hat.astype(np.uint16)*task.amm.ncodebooks/out_scale) + out_offset_sum
   latency=time.perf_counter() - t
+  print(f"before: {(scale,sum)} \n after: {(task.amm.out_scale, task.amm.out_offset_sum)}")
   #Y_hat=(Y_hat.astype(np.float64)*task.amm.ncodebooks/task.amm.out_scale) + task.amm.out_offset_sum
   #print(f"1-r2 {1-r2_score(o, Y_hat)}")
   return Y_hat,latency#[:len()]
@@ -119,7 +124,7 @@ def _np_dot(  E,Q):
   latency=time.perf_counter() - t
   return mult,latency
   
-def summary_plot_acc(acc_results, ncodebooks, name="", save=False):
+def summary_plot_acc(acc_results, ncodebooks, name="", acc_title = None, save=False):
   now=datetime.now().strftime("%Y_%m_%d_%H_%M_%S")
   _dir = os.path.dirname(os.path.abspath(__file__))
   acc_path=os.path.join(_dir, '..', 'experiments', 'results', 'embeddings', f'accuaracy_{name}_{now}.png')
@@ -127,7 +132,7 @@ def summary_plot_acc(acc_results, ncodebooks, name="", save=False):
   
   g_acc = sns.catplot(data = acc_results, y='avg_per_same', x="mult_name", hue= "data_name",col='k', aspect=0.5, kind='swarm')
   g_acc.fig.subplots_adjust(top=0.9) 
-  g_acc.fig.suptitle(f"Percent of top-k closest embeddings in same class as query {name}")
+  g_acc.fig.suptitle( acc_title or f"Percent of top-k closest embeddings in same class as query {name}")
   
   # no need to seperate by k, all latencies the same
   g_lat = sns.catplot(data = acc_results.query("k==1"), y='latency', x="mult_name", hue= "data_name", aspect=0.7, kind='swarm')
@@ -191,7 +196,6 @@ def compare_on_emb_queries_by_class(embeddings, queries,data_name, NREPS,num_que
     """Class is column ix which has largest value in row.
     For each query, get the k closest embeddings and see how many are in the same class as the query.
     """
-    assert(num_queries == len(query_classes))
     def _per_same_class(embedding_ixs, query_class):
       classes = np.apply_along_axis(np.argmax, 1, embeddings[embedding_ixs])
       return 100*np.mean(classes == query_class)
@@ -200,12 +204,13 @@ def compare_on_emb_queries_by_class(embeddings, queries,data_name, NREPS,num_que
                    range(num_queries))
                )/num_queries
 
-  results = empty_acc_results() 
+  results = empty_acc_results()
   embeddings_lengths = np.linalg.norm(embeddings, axis=1)
 
   task,est = _setup_task_est(embeddings, queries, ncodebooks, lutconsts)
   
   for mult_method, mult_name in ((_np_dot, 'numpy'), (partial(est_mult, est), 'py_est'), (partial(mithral_mult,task), 'cpp_mithral')):
+  #for mult_method, mult_name in ((partial(mithral_mult,task), 'cpp_mithral'),):
     np.random.seed(seed)
     avg_per_by_k=defaultdict(list)
     for _ in range(NREPS):
@@ -247,17 +252,26 @@ for data in itertools.chain(*data_sources[1:]):
   embeddings = Y_train[:-(len(Y_train)%32)]
   new=compare_on_emb_queries_by_class(embeddings, queries, data.name, NREPS, num_queries,ks,ncodebooks=ncodebooks, seed=seed)
   acc_results = pd.concat([new, acc_results],ignore_index=True)
+
 summary_plot_acc(acc_results, ncodebooks, name=data.name, save=True)
 
 #acc_results.to_csv("py_v_cpp_mithral_for_acc_on_cifar100.csv")
-
+#%%
 gb = acc_results.groupby(['mult_name', 'k'])['avg_per_same']
 mn=gb.mean().unstack('k').loc[['numpy', 'cpp_mithral', 'py_est']]
 sd=gb.std().unstack('k').loc[['numpy', 'cpp_mithral', 'py_est']]
 se=gb.sem().unstack('k').loc[['numpy', 'cpp_mithral', 'py_est']]
 diff_se = (mn.loc['py_est'] - mn.loc['cpp_mithral'])/np.sqrt(se.loc['py_est']**2 + se.loc['cpp_mithral']**2)
+l = acc_results.query("k==1").groupby('mult_name')['latency'].mean()
+l_sd = acc_results.query("k==1").groupby('mult_name')['latency'].std()
+
 print(
-  mn,sd,se,diff_se,
+  f"mean:\n{mn}",
+  f"standard deviation:\n{sd}",
+  f"standard error:\n{se}",
+  f"py-cpp mithral Z-score:\n{diff_se}",
+  f"latency:\n{l}",
+  f"latency SD:\n{l_sd}",
   sep='\n'
 )
 
@@ -306,12 +320,11 @@ def compare_on_emb_retrieval(embeddings, queries,data_name, NREPS,num_queries,ks
     
   task,est = _setup_task_est(embeddings, queries, ncodebooks, lutconsts)
   
-  #for mult_method, mult_name in ((partial(mithral_mult,task), 'mithral'),):
   for mult_method, mult_name in ((_np_dot, 'numpy'), (partial(est_mult, est), 'py_est'), (partial(mithral_mult,task), 'cpp_mithral')):
     np.random.seed(seed)
     avg_per_by_k=defaultdict(list)
     for _ in range(NREPS):
-      rand_ix = np.arange(num_queries) #np.random.choice(queries.shape[0], num_queries, replace=True)
+      rand_ix = np.random.choice(queries.shape[0], num_queries, replace=True)
       search = queries[rand_ix, :]
       search_classes = rand_ix
       search_lengths = np.linalg.norm(search, axis=1)
@@ -342,9 +355,11 @@ def compare_on_emb_retrieval(embeddings, queries,data_name, NREPS,num_queries,ks
   results['mult_name'] = results.mult_name.astype('category')
   return results
 
-name='text_queries_img_ix'
-acc_results=compare_on_emb_retrieval(img_emb, text_emb,name, NREPS, num_queries,ks,ncodebooks=ncodebooks)
-summary_plot_acc(acc_results, ncodebooks, name=name, save=True)
+for e,q, name in [(img_emb, img_emb, "img_queries_img_ix"),
+                  (img_emb, text_emb, "text_queries_img_ix"),
+                  (text_emb, text_emb, "text_queries_text_ix")]:
+  acc_results=compare_on_emb_retrieval(q,e,name, NREPS, num_queries,ks,ncodebooks=ncodebooks)
+  summary_plot_acc(acc_results, ncodebooks, name=name, acc_title = f"Avg% the Closest Embedding is in Top-K {name}", save=True)
 
 #%%
 def compare_dist_ret_from_true(embeddings, queries,data_name, NREPS, num_queries, ncodebooks=8,lutconsts=-1, seed=seed):

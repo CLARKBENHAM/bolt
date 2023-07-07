@@ -49,7 +49,7 @@ NREPS=5
 NAVG=4
 for data in itertools.chain(*data_sources):
   print("$$$$$data", data.name)
-  for ncodebooks in [16]:
+  for ncodebooks in [2,4]:
     print(f"ncodebooks={ncodebooks}")
     min_trials = []
     for _ in range(NAVG):
@@ -89,13 +89,16 @@ for data in itertools.chain(*data_sources):
         task.X=X_test
         task.Q=W_test
         copy_to_cpp_time=time.perf_counter() - t
+        task.encode()
   
         #task.Q=W_train[:len(W_test)]  # W_train and W_test the same here; not needed
         #task.lut() #making luts in C++ and Py has R^2 of 0.999 
         #task.Q =W_test
         t = time.perf_counter()
-        task.run_matmul(False)
-        #task.run_matmul(True) #Encodes test Q as LUT instead of using train_Q's luts 
+        #task.lut()
+        #task.scan() 
+        #task.run_matmul(False)
+        task.run_matmul(True) #Encodes test Q as LUT instead of using train_Q's luts 
         Y_hat2=task.amm.out_mat #Since we just care about relative order for predicting output
         cpp_est_time=time.perf_counter() - t
         Y_hat2=(Y_hat2.astype(np.uint16)*task.amm.ncodebooks/task.amm.out_scale) + task.amm.out_offset_sum
@@ -298,6 +301,7 @@ o=compute_metrics_no_train(N,D,M,ncodebooks,X,Q)
 print(compute_metrics_no_train(N,D,M,ncodebooks,X,Q))
 
 
+print("R2 of just the correct class for each row is worse than the total R^2", r2_score(Y[np.arange(len(Y)), max_ix], Y_hat2[np.arange(len(Y)), max_ix]), cpp_est_r2)
 #%% See how good it is if it knows
 
 task=mithral_wrapped.mithral_amm_task_float(*X_train.shape,W_train.shape[1], ncodebooks, lutconsts)
