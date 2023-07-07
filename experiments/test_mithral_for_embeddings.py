@@ -1,4 +1,10 @@
 #%%
+# For matricies X (N,D) and Q (D,m) Mithral is optimized for  N > D,M 
+# and X that changes each time, against a smaller fixed operator Q.
+# For embedding search the embedding matrix is large and fixed and 
+# Query matrix is small and changes each time. 
+# This script tests how Mithral works for low latency embedding search, with low expectations.
+# It would be better to compute the optimal centroids for each row X, instead of approximating via hash
 
 # Fiting on the data that's about to be muliplied still only gives an accuracy of 
 import re
@@ -80,29 +86,37 @@ def _setup_task_est(embeddings, queries, ncodebooks, lutconsts):
   task.X=embeddings
   copy_python_to_amm(est, task.amm)
   copy_python_luts(est, task.amm)
-  task.encode()
+  task.encode() #X's constant for this example
   #print('made scale', task.amm.out_scale, task.amm.out_offset_sum)
   #global out_scale, out_offset_sum
   #out_scale = task.amm.out_scale
   #out_offset_sum=task.amm.out_offset_sum
   return task,est 
-  
+
+def mithral_set_prod_sz(task,N=None,M=None):
+  """default assumes train/prod have same shapes.
+    Need to re-train task
+  """
+  if N is None:
+    N = task.amm.N 
+  if M is None:
+    M = task.amm.M
+  task.resize(N,M)
+   
 def mithral_mult(task, E,Q):
-  D,M = Q.shape
   task.Q=Q
-  task.amm.M = M
   #task.amm.out_scale = out_scale
   #task.amm.out_offset_sum = out_offset_sum 
   scale,sum = task.amm.out_scale, task.amm.out_offset_sum
   t = time.perf_counter()
   #task.run_matmul(True) # if true this changes out_scale and out_offset_sum; possibly to invalid/bad reasons TODO
-  #task.lut()
+  task.lut()
   task.scan()
-  Y_hat=task.amm.out_mat[:,:M] #raw out_mat if just care about relative order for predicting output. slice for test shape used
+  Y_hat=task.amm.out_mat #raw out_mat if just care about relative order for predicting output. slice for test shape used
   Y_hat=(Y_hat.astype(np.uint16)*task.amm.ncodebooks/task.amm.out_scale) + task.amm.out_offset_sum
   #Y_hat=(Y_hat.astype(np.uint16)*task.amm.ncodebooks/out_scale) + out_offset_sum
   latency=time.perf_counter() - t
-  print(f"before: {(scale,sum)} \n after: {(task.amm.out_scale, task.amm.out_offset_sum)}")
+  #print(f"before: {(scale,sum)} \n after: {(task.amm.out_scale, task.amm.out_offset_sum)}")
   #Y_hat=(Y_hat.astype(np.float64)*task.amm.ncodebooks/task.amm.out_scale) + task.amm.out_offset_sum
   #print(f"1-r2 {1-r2_score(o, Y_hat)}")
   return Y_hat,latency#[:len()]
@@ -188,6 +202,14 @@ def summary_plot_dist(dist_results, save=False):
 
 #%%  How accurate is getting Class of Cifar-100
 def compare_on_emb_queries_by_class(embeddings, queries,data_name, NREPS,num_queries,ks, ncodebooks=8,lutconsts=-1,seed=seed):
+  task,est = _setup_task_est(embeddings, queries, ncodebooks, lutconsts)
+  results = empty_acc_results()
+  embeddings = embeddings[::2, :]
+  embeddings_lengths = np.linalg.norm(embeddings, axis=1)
+  task.resize(embeddings.shape[0], num_queries)
+  task.X = embeddings 
+  task.encode()
+  
   """ 
   Where the class is the largest ix of row of embedding
   How often in top K is the correct vector returned?
@@ -204,15 +226,10 @@ def compare_on_emb_queries_by_class(embeddings, queries,data_name, NREPS,num_que
                    range(num_queries))
                )/num_queries
 
-  results = empty_acc_results()
-  embeddings_lengths = np.linalg.norm(embeddings, axis=1)
-
-  task,est = _setup_task_est(embeddings, queries, ncodebooks, lutconsts)
-  
+  dfs = []
   for mult_method, mult_name in ((_np_dot, 'numpy'), (partial(est_mult, est), 'py_est'), (partial(mithral_mult,task), 'cpp_mithral')):
   #for mult_method, mult_name in ((partial(mithral_mult,task), 'cpp_mithral'),):
     np.random.seed(seed)
-    avg_per_by_k=defaultdict(list)
     for _ in range(NREPS):
       rand_ix=np.random.choice(queries.shape[0], num_queries, replace=True)
       search = queries[rand_ix, :]
@@ -226,21 +243,18 @@ def compare_on_emb_queries_by_class(embeddings, queries,data_name, NREPS,num_que
                             axis=0)
       for k in ks:
         avg_per_same = calc_avg_per_same(k, closest_embeddings_ixs, search_classes)
+        dfs += [pd.DataFrame([[data_name, mult_name, k, num_queries, avg_per_same, latency]], 
+             columns=acc_columns)]
         if k == ks[-1]:
+          print(f"Avg Percent of top-{k} in query's class {avg_per_same:.2f}% for {data_name} by method {mult_name} on {num_queries} queries")
           if avg_per_same <= 60:
               print("BAD")
-          print(f"Avg Percent of top-{k} in query's class {avg_per_same:.2f}% for {data_name} by method {mult_name} on {num_queries} queries")
-        avg_per_by_k[k].append(avg_per_same)
-    rep_of_avgs = {k:f"{sum(avgs)/len(avgs):.2f} SD {np.std(avgs):.2f}" for k, avgs in avg_per_by_k.items()}
+
     print(f"For {data_name} computed by {mult_name} Over {NREPS} of {num_queries} queries by k")
-    pprint(rep_of_avgs)
+    method_result = pd.concat(dfs[-NREPS*len(ks):], ignore_index=True)
+    print(method_result.groupby('k').describe()['avg_per_same'][['mean', 'std']])
     
-    new = pd.DataFrame([[data_name, mult_name, k, num_queries, avg_per_same, latency] 
-                        for k, avgs in avg_per_by_k.items()
-                        for avg_per_same in avgs], 
-                       columns=acc_columns)
-    results=pd.concat([results,new], ignore_index=True)
-        
+  results=pd.concat(dfs, ignore_index=True)
   results['data_name'] = results.data_name.astype('category')
   results['mult_name'] = results.mult_name.astype('category')
   return results
@@ -253,25 +267,22 @@ for data in itertools.chain(*data_sources[1:]):
   new=compare_on_emb_queries_by_class(embeddings, queries, data.name, NREPS, num_queries,ks,ncodebooks=ncodebooks, seed=seed)
   acc_results = pd.concat([new, acc_results],ignore_index=True)
 
-summary_plot_acc(acc_results, ncodebooks, name=data.name, save=True)
-
+summary_plot_acc(acc_results, ncodebooks, name=data.name, save=False)
 #acc_results.to_csv("py_v_cpp_mithral_for_acc_on_cifar100.csv")
-#%%
+
 gb = acc_results.groupby(['mult_name', 'k'])['avg_per_same']
 mn=gb.mean().unstack('k').loc[['numpy', 'cpp_mithral', 'py_est']]
 sd=gb.std().unstack('k').loc[['numpy', 'cpp_mithral', 'py_est']]
 se=gb.sem().unstack('k').loc[['numpy', 'cpp_mithral', 'py_est']]
 diff_se = (mn.loc['py_est'] - mn.loc['cpp_mithral'])/np.sqrt(se.loc['py_est']**2 + se.loc['cpp_mithral']**2)
-l = acc_results.query("k==1").groupby('mult_name')['latency'].mean()
-l_sd = acc_results.query("k==1").groupby('mult_name')['latency'].std()
+l_and_sd = acc_results.query("k==1").groupby('mult_name').describe()['latency'][['mean', 'std']]
 
 print(
   f"mean:\n{mn}",
   f"standard deviation:\n{sd}",
   f"standard error:\n{se}",
   f"py-cpp mithral Z-score:\n{diff_se}",
-  f"latency:\n{l}",
-  f"latency SD:\n{l_sd}",
+  f"latency:\n{l_and_sd}",
   sep='\n'
 )
 

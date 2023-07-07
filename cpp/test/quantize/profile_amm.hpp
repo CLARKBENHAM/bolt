@@ -101,10 +101,19 @@ struct mithral_amm_task { // Class which all data uses. Copy this one.
         X.setRandom();
         Q.setRandom();
     }
+    // For if training size doesn't equal production size
+    void resize(int new_N, int new_M) {
+        N_padded = new_N % scan_block_nrows == 0 ? new_N :
+            new_N + (scan_block_nrows - (new_N % scan_block_nrows));
+        int D = X.cols();
+        X.resize(N_padded, D);
+        Q.resize(D, new_M);
+        amm.resize(N_padded, new_M);
+    }
 
     void encode() { amm.encode(X.data()); }
-    void mithral_encode_only() { amm.mithral_encode_only(X.data()); }
-
+    void mithral_encode_only() { amm.mithral_encode_only(X.data()); } // doesn't zip
+    
     void lut() { amm.lut(Q.data()); }
     void scan() { amm.scan(); }
 

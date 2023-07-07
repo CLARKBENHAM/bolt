@@ -86,6 +86,7 @@ PYBIND11_MODULE(mithral_wrapped, m) {
        }))
        .def("encode"                                                           , &mithral_amm_task<float>::encode)
        .def("mithral_encode_only"                                              , &mithral_amm_task<float>::mithral_encode_only)
+       .def("resize"                                                           , &mithral_amm_task<float>::resize)
        .def("lut"                                                              , &mithral_amm_task<float>::lut)
        .def("scan"                                                             , &mithral_amm_task<float>::scan)
        .def("run_matmul"                                                       , &mithral_amm_task<float>::run_matmul)
@@ -118,7 +119,6 @@ PYBIND11_MODULE(mithral_wrapped, m) {
     using scale_t = typename traits::encoding_scales_type;
     using offset_t = typename traits::encoding_offsets_type;
     using output_t = typename traits::output_type;
-    // Pulled from parts of code
     py::class_<mithral_amm<float>>(m, "mithral_amm_float")
        .def(py::init([](int N, int D, int M, int ncodebooks, const float* centroids,
                         // for encoding
@@ -132,7 +132,6 @@ PYBIND11_MODULE(mithral_wrapped, m) {
                                      encode_scales, encode_offsets,
                                       idxs,  nnz_per_centroid};
         }))
-        //can only write PyBind functions that don't take in data
         .def("scan_test"                    , &mithral_amm<float>::scan_test)
         .def("zip_bolt_colmajor_only"       , &mithral_amm<float>::zip_bolt_colmajor_only)
         .def("scan_test_zipped"             , &mithral_amm<float>::scan_test_zipped)

@@ -186,6 +186,18 @@ struct mithral_amm {
     {
         luts.setRandom();  // so profiling without LUT creation isn't undefined
     }
+    
+    void resize(int new_N, int new_M) {
+        N = new_N;
+        M = new_M;
+        tmp_codes.resize(N, ncodebooks);
+        codes.resize(N, ncodebooks);
+        tmp_luts_f32.resize(M, ncodebooks * lut_sz);
+        // luts.conservativeResize(M, ncodebooks * lut_sz); // If shrinking, Luts can be kept
+        luts.resize(M, ncodebooks * lut_sz); // convervativeResize doesn't change value when copied out
+        out_mat.resize(N,M);
+    }
+
 
     void encode(const InputT* X) {
         // TODO add strides to these funcs so that we can pad number
