@@ -167,46 +167,39 @@ PYBIND11_MODULE(mithral_wrapped, m) {
         })
         // Return reference to C++ data w/o copy, in Col order, upcast to floats
         .def("scan_ret_col_order", [](mithral_amm<float> &self) {
+            // below works but is slow, copy data 3x 
             self.scan();
-            // Eigen::Map<Eigen::Matrix<float, -1, -1, Eigen::RowMajor>> mf(const_cast<float*>(self.centroids),rows,cols);
-            // return py::array_t<double>(
-            //     {self.N, self.M}, // shape
-            //     {1000*1000*8, 1000*8, 8}, // C-style contiguous strides for double
-            //     self.out_mat, // the data pointer
-            //     free_when_done); // numpy array references this parent
-            // });
-            return py::memoryview::from_buffer(
-                self.out_mat.data(),                               // buffer pointer
-                { self.N, self.M },                                  // shape (rows, cols)
-                { sizeof(float) * self.M, sizeof(float) }   // strides in bytes
-            );
+            Eigen::MatrixXf out = self.out_mat.cast<float>();
+            out *= self.ncodebooks / self.out_scale;
+            out.array() += self.out_offset_sum;
+            return out;
         })
         .def("scan_ret_col_order_upcast", [](mithral_amm<float> &self) { // returns floats
             self.scan();
             auto NM = self.N * self.M;
-            //float * out = aligned_alloc(size_t 32, size_t NM* sizeof float);
+            //float * out = aligned_alloc(32, sizeof(float) * NM);
             float * out = new float[NM]; // python takes ownership at end
             const __m256 scales = _mm256_set1_ps(self.ncodebooks/self.out_scale);
             const __m256 offsets = _mm256_set1_ps(self.out_offset_sum);
             if (std::is_same<output_t, uint8_t>::value) {
-                const uint8_t * ptr = &self.out_mat.data();
+                const uint8_t * in = self.out_mat.data();
                 for (int index = 0; index < NM ; index += 16) {
                    // __m128i small_load = _mm_loadl_epi64( (const __m128i*)p);
                    // __m256i intvec = _mm256_cvtepu8_epi32( small_load );
                    // __m256 _mm256_cvtepi32_ps(intvec)
                    // __m128i val = _mm_loadu_si128((const __m128i*)(self.out_mat.data() + index));
-                    auto lo8 = _mm_loadl_epi64( (const __m128i*)(ptr + index));
-                    auto hi8 = _mm_loadl_epi64( (const __m128i*)(ptr + index + 4));
-                    __m256i lo32 = _mm256_cvtepi8_epi32(lo8);
-                    __m256i hi32 = _mm256_cvtepi8_epi32(hi8);
+                    __m128i lo8 = _mm_loadl_epi64( (const __m128i*)(in + index));
+                    __m128i hi8 = _mm_loadl_epi64( (const __m128i*)(in + index + 8));
+                    __m256i lo32 = _mm256_cvtepu8_epi32(lo8);
+                    __m256i hi32 = _mm256_cvtepu8_epi32(hi8);
                     __m256 lo = _mm256_cvtepi32_ps(lo32);
                     __m256 hi = _mm256_cvtepi32_ps(hi32);
                     __m256 fma_lo = _mm256_fmadd_ps(lo, scales, offsets); 
                     __m256 fma_hi = _mm256_fmadd_ps(hi, scales, offsets); 
-                    _mm256_storeu_ps(out + index * 8, lo);
-                    _mm256_storeu_ps(out + 4 + index * 8, hi);
+                    _mm256_storeu_ps(out + index, fma_lo);
+                    _mm256_storeu_ps(out + 8 + index, fma_hi);
                 }
-            }
+            } 
             // else {
             //     for (int index = 0; index < NM ; index += 8) {
             //         __m128i u16 = _mm_load_si128((self.out_mat.data() + index));
@@ -221,20 +214,8 @@ PYBIND11_MODULE(mithral_wrapped, m) {
             return py::memoryview::from_buffer(
                 out,                               // buffer pointer
                 { self.N, self.M },                                  // shape (rows, cols)
-                { sizeof(float) * self.M, sizeof(float) }   // strides in bytes
+                { sizeof(float), sizeof(float) * self.N }   // strides in bytes
             );
-            // below works but is slow, copy data 3x 
-            //self.scan();
-            //Eigen::MatrixXf out = self.out_mat.cast<float>();
-            //out *= self.ncodebooks / self.out_scale;
-            //out.array() += self.out_offset_sum;
-            //return out;
-
-            //return py::memoryview::from_buffer(
-            //    out.data(),                                 // buffer pointer
-            //    { self.N, self.M },                         // shape (rows, cols)
-            //    { sizeof(float) * self.M, sizeof(float) }   // strides in bytes
-            //);
         }, py::return_value_policy::take_ownership)
         
         // Python Thinks it's getting in row major but Eigen returns in column major by default

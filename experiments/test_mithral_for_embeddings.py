@@ -126,7 +126,7 @@ def mithral_mult_col(task, E,Q):
   """ WARN: mithral_mult doesn't include time to copy Q into C++"""
   t = time.perf_counter()
   task.amm.lut_col_order(Q)
-  Y_hat = task.amm.scan_ret_col_order_upcast()
+  Y_hat =np.array(task.amm.scan_ret_col_order_upcast(), copy=False)
   latency=time.perf_counter() - t
   return Y_hat,latency
 

@@ -387,8 +387,8 @@ task.amm.out_mat = np.zeros(task.amm.out_mat.shape)
 print("succesful copy")
 s=timer()
 task.run_matmul(True)
-# If use uint8 Mithral Output then need to cast away first, else could multiply a uint8 and wrap it
-Y_hat=(task.amm.out_mat.astype(np.uint16)*ncodebooks/task.amm.out_scale) + task.amm.out_offset_sum #by avg
+#If use uint8 Mithral Output then need to cast away first
+Y_hat=(task.amm.out_mat.astype(np.float32)*ncodebooks/task.amm.out_scale) + task.amm.out_offset_sum #by avg
 #Y_hat=(task.amm.out_mat/task.amm.out_scale) + task.amm.out_offset_sum #by sum
 #Y_hat=task.amm.out_mat
 e=timer()
