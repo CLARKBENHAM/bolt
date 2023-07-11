@@ -113,13 +113,22 @@ def mithral_mult(task, E,Q):
   task.lut()
   task.scan()
   Y_hat=task.amm.out_mat #raw out_mat if just care about relative order for predicting output. slice for test shape used
-  Y_hat=(Y_hat.astype(np.uint16)*task.amm.ncodebooks/task.amm.out_scale) + task.amm.out_offset_sum
+  Y_hat=(Y_hat.astype(np.float32)*task.amm.ncodebooks/task.amm.out_scale) + task.amm.out_offset_sum
+  #Y_hat=(Y_hat.astype(np.uint16)*task.amm.ncodebooks/task.amm.out_scale) + task.amm.out_offset_sum
   #Y_hat=(Y_hat.astype(np.uint16)*task.amm.ncodebooks/out_scale) + out_offset_sum
   latency=time.perf_counter() - t
   #print(f"before: {(scale,sum)} \n after: {(task.amm.out_scale, task.amm.out_offset_sum)}")
   #Y_hat=(Y_hat.astype(np.float64)*task.amm.ncodebooks/task.amm.out_scale) + task.amm.out_offset_sum
   #print(f"1-r2 {1-r2_score(o, Y_hat)}")
   return Y_hat,latency#[:len()]
+
+def mithral_mult_col(task, E,Q):
+  """ WARN: mithral_mult doesn't include time to copy Q into C++"""
+  t = time.perf_counter()
+  task.amm.lut_col_order(Q)
+  Y_hat = task.amm.scan_ret_col_order_upcast()
+  latency=time.perf_counter() - t
+  return Y_hat,latency
 
 def est_mult(_est, E,Q):
   hparams_dict = {'ncodebooks': _est.ncodebooks, 'lut_work_const': -1}
@@ -201,15 +210,12 @@ def summary_plot_dist(dist_results, save=False):
       print(path)
 
 #%%  How accurate is getting Class of Cifar-100
+
 def compare_on_emb_queries_by_class(embeddings, queries,data_name, NREPS,num_queries,ks, ncodebooks=8,lutconsts=-1,seed=seed):
   task,est = _setup_task_est(embeddings, queries, ncodebooks, lutconsts)
   results = empty_acc_results()
-  embeddings = embeddings[::2, :]
-  embeddings_lengths = np.linalg.norm(embeddings, axis=1)
+  embeddings_lengths = np.linalg.norm(embeddings, axis=1).astype(np.uint16)
   task.resize(embeddings.shape[0], num_queries)
-  task.X = embeddings 
-  task.encode()
-  
   """ 
   Where the class is the largest ix of row of embedding
   How often in top K is the correct vector returned?
@@ -227,8 +233,12 @@ def compare_on_emb_queries_by_class(embeddings, queries,data_name, NREPS,num_que
                )/num_queries
 
   dfs = []
-  for mult_method, mult_name in ((_np_dot, 'numpy'), (partial(est_mult, est), 'py_est'), (partial(mithral_mult,task), 'cpp_mithral')):
-  #for mult_method, mult_name in ((partial(mithral_mult,task), 'cpp_mithral'),):
+  #for mult_method, mult_name in ((_np_dot, 'numpy'), (partial(est_mult, est), 'py_est'), (partial(mithral_mult,task), 'cpp_mithral'),(partial(mithral_mult_col,task), 'cpp_mithral_col')):
+  for mult_method, mult_name in ((partial(mithral_mult,task), 'cpp_mithral'),(partial(mithral_mult_col,task), 'cpp_mithral_col'),):
+    if mult_name == 'cpp_mithral_col':# Change to column order
+      embeddings=np.asfortranarray(embeddings)
+      queries = np.asfortranarray(queries)
+      
     np.random.seed(seed)
     for _ in range(NREPS):
       rand_ix=np.random.choice(queries.shape[0], num_queries, replace=True)
@@ -267,21 +277,23 @@ for data in itertools.chain(*data_sources[1:]):
   new=compare_on_emb_queries_by_class(embeddings, queries, data.name, NREPS, num_queries,ks,ncodebooks=ncodebooks, seed=seed)
   acc_results = pd.concat([new, acc_results],ignore_index=True)
 
-summary_plot_acc(acc_results, ncodebooks, name=data.name, save=False)
+#summary_plot_acc(acc_results, ncodebooks, name=data.name, save=False)
 #acc_results.to_csv("py_v_cpp_mithral_for_acc_on_cifar100.csv")
 
 gb = acc_results.groupby(['mult_name', 'k'])['avg_per_same']
-mn=gb.mean().unstack('k').loc[['numpy', 'cpp_mithral', 'py_est']]
-sd=gb.std().unstack('k').loc[['numpy', 'cpp_mithral', 'py_est']]
-se=gb.sem().unstack('k').loc[['numpy', 'cpp_mithral', 'py_est']]
-diff_se = (mn.loc['py_est'] - mn.loc['cpp_mithral'])/np.sqrt(se.loc['py_est']**2 + se.loc['cpp_mithral']**2)
 l_and_sd = acc_results.query("k==1").groupby('mult_name').describe()['latency'][['mean', 'std']]
+print(l_and_sd)
+#%%
+mn=gb.mean().unstack('k')
+sd=gb.std().unstack('k')
+se=gb.sem().unstack('k')
+diff_se = (mn.loc['py_est'] - mn.loc['cpp_mithral'])/np.sqrt(se.loc['py_est']**2 + se.loc['cpp_mithral']**2)
 
 print(
-  f"mean:\n{mn}",
+  f"Accuracy mean:\n{mn}",
   f"standard deviation:\n{sd}",
   f"standard error:\n{se}",
-  f"py-cpp mithral Z-score:\n{diff_se}",
+  f"py_est-cpp_mithral Z-score:\n{diff_se}",
   f"latency:\n{l_and_sd}",
   sep='\n'
 )
@@ -431,7 +443,37 @@ for e,q, name in [(img_emb, img_emb, "img_queries_img"),
 summary_plot_dist(dist_results, save=True)
 
 #%%  ###     Scrap
+def test_if_copy_or_ref():
+  N=1024*128
+  D=1000
+  M=32
+  X=np.arange(N*D).astype(np.float32).reshape(N,D)
+  Q=np.arange(D*M).astype(np.float32).reshape(D,M)
+  task,_ = _setup_task_est(X[:1024], Q.T, ncodebooks=16, lutconsts=-1)
+  task.resize(N, M)
+  task_copy = 0
+  task_ref = 0
+  X2 = X.copy()
+  Q2 = Q.copy()
+  X=np.asfortranarray(X)
+  Q=np.asfortranarray(Q)
+  for _ in range(10):
+    t = time.perf_counter()
+    task.amm.encode_col_order(X)
+    task.amm.lut_col_order(Q)
+    task_ref +=(time.perf_counter() - t)
+    
+    t = time.perf_counter()
+    task.X = X2
+    task.Q = Q2
+    task.encode()
+    task.lut()
+    task_copy +=(time.perf_counter() - t)
+  print(f"task copy: {task_copy}, task_ref {task_ref} (should be no copy)") 
 
+test_if_copy_or_ref()
+
+#%%
 def logloss_of_softmax(normalized_cosine, y_true):
   # This isn't a mathemtatically valid way to get probabilities 
   softmax = np.exp(normalized_cosine)/np.sum(np.exp(normalized_cosine), axis=0, keepdims=True)
@@ -459,7 +501,13 @@ def plot_dists_togther(results):
   #  g_l2  =  sns.catplot(data = results , y='l2'      , x="mult_name" , hue= "data_name" , kind='swarm', size=3, alpha=0.3, legend=False)
   #  g_l1  = sns.catplot(data = results , y='l1'      , x="mult_name" , hue= "data_name" , kind='swarm', size=3, alpha=0.3, legend=False)
   
-
+def test_resizing_works():
+  task,est = _setup_task_est(embeddings[::2,:], queries, ncodebooks, lutconsts)
+  results = empty_acc_results()
+  embeddings_lengths = np.linalg.norm(embeddings, axis=1)
+  task.resize(embeddings.shape[0], num_queries)
+  task.X = embeddings 
+  task.encode()
 #%%
 
 rand_ix = np.random.choice(text_emb.shape[0], 10000, replace=True)

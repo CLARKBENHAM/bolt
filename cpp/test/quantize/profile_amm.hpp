@@ -101,7 +101,8 @@ struct mithral_amm_task { // Class which all data uses. Copy this one.
         X.setRandom();
         Q.setRandom();
     }
-    // For if training size doesn't equal production size
+    // For if training size doesn't equal production size call resize.
+    // This invalidates X,Q, codes and lutes
     void resize(int new_N, int new_M) {
         N_padded = new_N % scan_block_nrows == 0 ? new_N :
             new_N + (scan_block_nrows - (new_N % scan_block_nrows));

@@ -9,7 +9,9 @@
 #include <pybind11/eigen.h>
 #include <pybind11/numpy.h>
 
+#include <immintrin.h>
 #include <string> 
+#include <stdint.h>
 
 using namespace std;
 
@@ -91,10 +93,12 @@ PYBIND11_MODULE(mithral_wrapped, m) {
        .def("scan"                                                             , &mithral_amm_task<float>::scan)
        .def("run_matmul"                                                       , &mithral_amm_task<float>::run_matmul)
        .def_readonly("amm"                                                     , &mithral_amm_task<float>::amm) // whole amm object
-       .def("output"                                                           , &mithral_amm_task<float>::output)
+       .def("output"                                                           , &mithral_amm_task<float>::output) // by copy
+        // .def("get_output"                                                      , &mithral_amm_task<float>::output, py::return_value_policy::reference_internal) // no copy, flags.writeable = True,  flags.owndata = False
        .def_readwrite("X"                                                      , &mithral_amm_task<float>::X) //can return out matricies?
        .def_readwrite("Q"                                                      , &mithral_amm_task<float>::Q)
-       // stuff we pass into the amm object (would be learned during training)
+       // stuff we pass into the amm object (would be learned during training). 
+       // TODO: None of these params are actually used so should be removed(?)
        .def_readwrite("N_padded"                                               , &mithral_amm_task<float>::N_padded)
        .def_readwrite("centroids"                                              , &mithral_amm_task<float>::centroids)
        .def_readwrite("nsplits"                                                , &mithral_amm_task<float>::nsplits)
@@ -153,6 +157,86 @@ PYBIND11_MODULE(mithral_wrapped, m) {
         .def_readwrite("idxs"             , &mithral_amm<float>::idxs) //shape:  nnz_per_centroid * ncodebooks // used if lut sparse (nnz_per_centroid>0)
         .def_readwrite("nnz_per_centroid" , &mithral_amm<float>::nnz_per_centroid) //value: lut_work_const > 0 ? lut_work_const * D / ncodebooks : D //lut_work_const an element from lutconsts {-1 , 1 , 2 , 4}
         //return COPY from pointers, but you have to know shape going in. Read won't trigger page faults(!?!)
+
+        // Fns to call C++ with references from Python, only using amm obj. Will error if numpy not col order
+        .def("encode_col_order", [](mithral_amm<float> &self, Eigen::Ref<Eigen::Matrix<float, -1,-1, Eigen::ColMajor>> X) { 
+            self.encode(X.data());
+        })
+        .def("lut_col_order", [](mithral_amm<float> &self, Eigen::Ref<Eigen::Matrix<float, -1,-1, Eigen::ColMajor>> Q) { 
+            self.lut(Q.data());
+        })
+        // Return reference to C++ data w/o copy, in Col order, upcast to floats
+        .def("scan_ret_col_order", [](mithral_amm<float> &self) {
+            self.scan();
+            // Eigen::Map<Eigen::Matrix<float, -1, -1, Eigen::RowMajor>> mf(const_cast<float*>(self.centroids),rows,cols);
+            // return py::array_t<double>(
+            //     {self.N, self.M}, // shape
+            //     {1000*1000*8, 1000*8, 8}, // C-style contiguous strides for double
+            //     self.out_mat, // the data pointer
+            //     free_when_done); // numpy array references this parent
+            // });
+            return py::memoryview::from_buffer(
+                self.out_mat.data(),                               // buffer pointer
+                { self.N, self.M },                                  // shape (rows, cols)
+                { sizeof(float) * self.M, sizeof(float) }   // strides in bytes
+            );
+        })
+        .def("scan_ret_col_order_upcast", [](mithral_amm<float> &self) { // returns floats
+            self.scan();
+            auto NM = self.N * self.M;
+            //float * out = aligned_alloc(size_t 32, size_t NM* sizeof float);
+            float * out = new float[NM]; // python takes ownership at end
+            const __m256 scales = _mm256_set1_ps(self.ncodebooks/self.out_scale);
+            const __m256 offsets = _mm256_set1_ps(self.out_offset_sum);
+            if (std::is_same<output_t, uint8_t>::value) {
+                const uint8_t * ptr = &self.out_mat.data();
+                for (int index = 0; index < NM ; index += 16) {
+                   // __m128i small_load = _mm_loadl_epi64( (const __m128i*)p);
+                   // __m256i intvec = _mm256_cvtepu8_epi32( small_load );
+                   // __m256 _mm256_cvtepi32_ps(intvec)
+                   // __m128i val = _mm_loadu_si128((const __m128i*)(self.out_mat.data() + index));
+                    auto lo8 = _mm_loadl_epi64( (const __m128i*)(ptr + index));
+                    auto hi8 = _mm_loadl_epi64( (const __m128i*)(ptr + index + 4));
+                    __m256i lo32 = _mm256_cvtepi8_epi32(lo8);
+                    __m256i hi32 = _mm256_cvtepi8_epi32(hi8);
+                    __m256 lo = _mm256_cvtepi32_ps(lo32);
+                    __m256 hi = _mm256_cvtepi32_ps(hi32);
+                    __m256 fma_lo = _mm256_fmadd_ps(lo, scales, offsets); 
+                    __m256 fma_hi = _mm256_fmadd_ps(hi, scales, offsets); 
+                    _mm256_storeu_ps(out + index * 8, lo);
+                    _mm256_storeu_ps(out + 4 + index * 8, hi);
+                }
+            }
+            // else {
+            //     for (int index = 0; index < NM ; index += 8) {
+            //         __m128i u16 = _mm_load_si128((self.out_mat.data() + index));
+            //         __m256 f32 = _mm_cvtpu16_ps(u16);
+            //         __m256 fma = _mm256_fmadd_ps(f32, scales, offsets); 
+            //         _mm256_storeu_ps(out + index * 8, fma);
+            //         //__m512i i32 = _mm512_cvtepu16_epi32(val);
+            //         //__mm256_cvtepi32_ps1
+            //     }
+            //     assert(false);
+            // } 
+            return py::memoryview::from_buffer(
+                out,                               // buffer pointer
+                { self.N, self.M },                                  // shape (rows, cols)
+                { sizeof(float) * self.M, sizeof(float) }   // strides in bytes
+            );
+            // below works but is slow, copy data 3x 
+            //self.scan();
+            //Eigen::MatrixXf out = self.out_mat.cast<float>();
+            //out *= self.ncodebooks / self.out_scale;
+            //out.array() += self.out_offset_sum;
+            //return out;
+
+            //return py::memoryview::from_buffer(
+            //    out.data(),                                 // buffer pointer
+            //    { self.N, self.M },                         // shape (rows, cols)
+            //    { sizeof(float) * self.M, sizeof(float) }   // strides in bytes
+            //);
+        }, py::return_value_policy::take_ownership)
+        
         // Python Thinks it's getting in row major but Eigen returns in column major by default
         .def("getCentroids", [](mithral_amm<float> &self) { 
             //TODO: return in 3d
@@ -370,7 +454,7 @@ PYBIND11_MODULE(mithral_wrapped, m) {
         // outputs
         .def_readwrite("out_offset_sum"      , &mithral_amm<float>::out_offset_sum)
         .def_readwrite("out_scale"           , &mithral_amm<float>::out_scale)
-        .def_readwrite("out_mat"             , &mithral_amm<float>::out_mat) //eigen object
+        .def_readwrite("out_mat"             , &mithral_amm<float>::out_mat) // read only
         .def("getOutUint8", [](mithral_amm<float> &self) { 
             //Mithral by default writes uint8; not 16int we expect
             //Eigen::Map<Eigen::Matrix<uint16_t,-1,-1, Eigen::RowMajor>> mf(const_cast<uint8_t*>(self.out_mat.data()), self.out_mat.rows()/2, self.out_mat.cols());

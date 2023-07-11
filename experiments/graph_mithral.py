@@ -101,7 +101,8 @@ for data in itertools.chain(*data_sources):
         task.run_matmul(True) #Encodes test Q as LUT instead of using train_Q's luts 
         Y_hat2=task.amm.out_mat #Since we just care about relative order for predicting output
         cpp_est_time=time.perf_counter() - t
-        Y_hat2=(Y_hat2.astype(np.uint16)*task.amm.ncodebooks/task.amm.out_scale) + task.amm.out_offset_sum
+        #Y_hat2=(Y_hat2.astype(np.uint16)*task.amm.ncodebooks/task.amm.out_scale) + task.amm.out_offset_sum
+        Y_hat2=(Y_hat2.astype(np.float32)*task.amm.ncodebooks/task.amm.out_scale) + task.amm.out_offset_sum
         cpp_est_r2=r2_score(Y, Y_hat2)
         cpp_max_ix=np.apply_along_axis(np.argmax, 1, Y_hat2)
         cpp_est_per_ix_kept=np.sum(cpp_max_ix==max_ix)/cpp_max_ix.size

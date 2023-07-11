@@ -193,8 +193,7 @@ struct mithral_amm {
         tmp_codes.resize(N, ncodebooks);
         codes.resize(N, ncodebooks);
         tmp_luts_f32.resize(M, ncodebooks * lut_sz);
-        // luts.conservativeResize(M, ncodebooks * lut_sz); // If shrinking, Luts can be kept
-        luts.resize(M, ncodebooks * lut_sz); // convervativeResize doesn't change value when copied out
+        luts.resize(M, ncodebooks * lut_sz); 
         out_mat.resize(N,M);
     }
 
@@ -253,6 +252,10 @@ struct mithral_amm {
         mithral_scan_test_zipped<output_t>((const uint8_t*)codes.data(), N, ncodebooks,  M,
                     out_offset_sum, out_scale,
                     (const uint8_t*)luts.data(), out_mat.data());
+    }
+
+    void scan_ret_col_order_upcast() {
+        
     }
     //size params
     const int nsplits_per_codebook;
