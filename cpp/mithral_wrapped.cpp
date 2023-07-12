@@ -158,7 +158,7 @@ PYBIND11_MODULE(mithral_wrapped, m) {
         .def_readwrite("nnz_per_centroid" , &mithral_amm<float>::nnz_per_centroid) //value: lut_work_const > 0 ? lut_work_const * D / ncodebooks : D //lut_work_const an element from lutconsts {-1 , 1 , 2 , 4}
         //return COPY from pointers, but you have to know shape going in. Read won't trigger page faults(!?!)
 
-        // Fns to call C++ with references from Python, only using amm obj. Will error if numpy not col order
+        // Fns to call C++ with references from Python, only using amm obj. Will error if numpy not col order or f32
         .def("encode_col_order", [](mithral_amm<float> &self, Eigen::Ref<Eigen::Matrix<float, -1,-1, Eigen::ColMajor>> X) { 
             self.encode(X.data());
         })
@@ -174,43 +174,66 @@ PYBIND11_MODULE(mithral_wrapped, m) {
             out.array() += self.out_offset_sum;
             return out;
         })
-        .def("scan_ret_col_order_upcast", [](mithral_amm<float> &self) { // returns floats
+        .def("scan_ret_col_order_upcast", [](mithral_amm<float> &self) { // convert out_mat into correct floats
             self.scan();
-            auto NM = self.N * self.M;
-            //float * out = aligned_alloc(32, sizeof(float) * NM);
-            float * out = new float[NM]; // python takes ownership at end
-            const __m256 scales = _mm256_set1_ps(self.ncodebooks/self.out_scale);
-            const __m256 offsets = _mm256_set1_ps(self.out_offset_sum);
+            const __m512 scales = _mm512_set1_ps(self.ncodebooks/self.out_scale);
+            const __m512 offsets = _mm512_set1_ps(self.out_offset_sum);
+            const output_t * in = self.out_mat.data();
+            auto NM = self.N * self.M; 
+            float * out  =static_cast<float*>(aligned_alloc(64, NM* sizeof(float))); // python takes ownership at end
+            __m512* fma_ptr = (__m512*)out;
             if (std::is_same<output_t, uint8_t>::value) {
-                const uint8_t * in = self.out_mat.data();
-                for (int index = 0; index < NM ; index += 16) {
-                   // __m128i small_load = _mm_loadl_epi64( (const __m128i*)p);
-                   // __m256i intvec = _mm256_cvtepu8_epi32( small_load );
-                   // __m256 _mm256_cvtepi32_ps(intvec)
-                   // __m128i val = _mm_loadu_si128((const __m128i*)(self.out_mat.data() + index));
-                    __m128i lo8 = _mm_loadl_epi64( (const __m128i*)(in + index));
-                    __m128i hi8 = _mm_loadl_epi64( (const __m128i*)(in + index + 8));
-                    __m256i lo32 = _mm256_cvtepu8_epi32(lo8);
-                    __m256i hi32 = _mm256_cvtepu8_epi32(hi8);
-                    __m256 lo = _mm256_cvtepi32_ps(lo32);
-                    __m256 hi = _mm256_cvtepi32_ps(hi32);
-                    __m256 fma_lo = _mm256_fmadd_ps(lo, scales, offsets); 
-                    __m256 fma_hi = _mm256_fmadd_ps(hi, scales, offsets); 
-                    _mm256_storeu_ps(out + index, fma_lo);
-                    _mm256_storeu_ps(out + 8 + index, fma_hi);
+                // Works, but slightly slower. In case on machine w/o avx2
+                //const __m256 scales = _mm256_set1_ps(self.ncodebooks/self.out_scale);
+                //const __m256 offsets = _mm256_set1_ps(self.out_offset_sum);
+                //for (int index = 0; index < NM ; index += 8) {
+                //    __m128i lo8 = _mm_loadl_epi64( (const __m128i*)(in + index));
+                //    __m128i hi8 = _mm_loadl_epi64( (const __m128i*)(in + index + 8));
+                //    __m256i lo32 = _mm256_cvtepu8_epi32(lo8);
+                //    __m256i hi32 = _mm256_cvtepu8_epi32(hi8);
+                //    __m256 lo = _mm256_cvtepi32_ps(lo32);
+                //    __m256 hi = _mm256_cvtepi32_ps(hi32);
+                //    __m256 fma_lo = _mm256_fmadd_ps(lo, scales, offsets); 
+                //    __m256 fma_hi = _mm256_fmadd_ps(hi, scales, offsets); 
+                //    _mm256_storeu_ps(out + index, fma_lo);
+                //    _mm256_storeu_ps(out + 8 + index, fma_hi);
+                //}
+                __m128i* u8_ptr = (__m128i*)in;
+                // N has to be multiple of 32, scan_block_nrows
+                for (int index = 0; index < NM ; index += 32) {
+                    //__m128i u8 = *u8_ptr++; // Eigen  dynamic matricies aren't garenteed to be aligned, unless define EIGEN_MAX_ALIGN_BYTES
+                    __m128i u8 = _mm_loadu_si128(u8_ptr++);
+                    __m128i u8_  = _mm_loadu_si128(u8_ptr++);
+                    __m512i i32 = _mm512_cvtepu8_epi32(u8);
+                    __m512i i32_ = _mm512_cvtepu8_epi32(u8_);
+                    __m512 f32 = _mm512_cvtepi32_ps(i32);
+                    __m512 f32_  = _mm512_cvtepi32_ps(i32_);
+                    __m512 fma = _mm512_fmadd_ps(f32, scales, offsets); 
+                    __m512 fma_  = _mm512_fmadd_ps(f32_, scales, offsets);
+                    _mm512_store_ps(fma_ptr++, fma);
+                    _mm512_store_ps(fma_ptr++, fma_);
+                    //*fma_ptr++   = fma;
+                    //*fma_ptr++   = fma_;
                 }
+            } else if (std::is_same<output_t, uint16_t>::value)  {
+                __m256i* u16_ptr = (__m256i*)in;
+                for (int index = 0; index < NM ; index += 32) {
+                    __m256i u16  = _mm256_loadu_si256(u16_ptr++);
+                    __m256i u16_ = _mm256_loadu_si256(u16_ptr++);
+                    __m512i i32  = _mm512_cvtepu16_epi32(u16);
+                    __m512i i32_ = _mm512_cvtepu16_epi32(u16_);
+                    __m512 f32   = _mm512_cvtepi32_ps(i32);
+                    __m512 f32_  = _mm512_cvtepi32_ps(i32_);
+                    __m512 fma   = _mm512_fmadd_ps(f32, scales, offsets);
+                    __m512 fma_  = _mm512_fmadd_ps(f32_, scales, offsets);
+                    _mm512_store_ps(fma_ptr++, fma);
+                    _mm512_store_ps(fma_ptr++, fma_); // This is a little slower?
+                    //*fma_ptr++   = fma;
+                    //*fma_ptr++   = fma_;
+                }
+            } else {
+                throw;
             } 
-            // else {
-            //     for (int index = 0; index < NM ; index += 8) {
-            //         __m128i u16 = _mm_load_si128((self.out_mat.data() + index));
-            //         __m256 f32 = _mm_cvtpu16_ps(u16);
-            //         __m256 fma = _mm256_fmadd_ps(f32, scales, offsets); 
-            //         _mm256_storeu_ps(out + index * 8, fma);
-            //         //__m512i i32 = _mm512_cvtepu16_epi32(val);
-            //         //__mm256_cvtepi32_ps1
-            //     }
-            //     assert(false);
-            // } 
             return py::memoryview::from_buffer(
                 out,                               // buffer pointer
                 { self.N, self.M },                                  // shape (rows, cols)

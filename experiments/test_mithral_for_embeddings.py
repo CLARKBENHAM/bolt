@@ -104,11 +104,11 @@ def mithral_set_prod_sz(task,N=None,M=None):
   task.resize(N,M)
    
 def mithral_mult(task, E,Q):
-  task.Q=Q
   #task.amm.out_scale = out_scale
   #task.amm.out_offset_sum = out_offset_sum 
-  scale,sum = task.amm.out_scale, task.amm.out_offset_sum
+  #scale,sum = task.amm.out_scale, task.amm.out_offset_sum
   t = time.perf_counter()
+  task.Q=Q
   #task.run_matmul(True) # if true this changes out_scale and out_offset_sum; possibly to invalid/bad reasons TODO
   task.lut()
   task.scan()
@@ -233,11 +233,12 @@ def compare_on_emb_queries_by_class(embeddings, queries,data_name, NREPS,num_que
                )/num_queries
 
   dfs = []
-  #for mult_method, mult_name in ((_np_dot, 'numpy'), (partial(est_mult, est), 'py_est'), (partial(mithral_mult,task), 'cpp_mithral'),(partial(mithral_mult_col,task), 'cpp_mithral_col')):
-  for mult_method, mult_name in ((partial(mithral_mult,task), 'cpp_mithral'),(partial(mithral_mult_col,task), 'cpp_mithral_col'),):
-    if mult_name == 'cpp_mithral_col':# Change to column order
-      embeddings=np.asfortranarray(embeddings)
-      queries = np.asfortranarray(queries)
+  for mult_method, mult_name in ((_np_dot, 'numpy'), (partial(est_mult, est), 'py_est'), (partial(mithral_mult,task), 'cpp_mithral'),(partial(mithral_mult_col,task), 'cpp_mithral_col')):
+  #for mult_method, mult_name in ((partial(mithral_mult,task), 'cpp_mithral'),(partial(mithral_mult_col,task), 'cpp_mithral_col'),):
+    #if mult_name == 'cpp_mithral_col':# Change to column order, why doesn't mithral need it?
+    #  # We're not actually using querizes?
+    #  embeddings=np.asfortranarray(embeddings)
+    #  queries = np.asfortranarray(queries)
       
     np.random.seed(seed)
     for _ in range(NREPS):
@@ -342,8 +343,8 @@ def compare_on_emb_retrieval(embeddings, queries,data_name, NREPS,num_queries,ks
                     for q_ix in range(query_classes.shape[0])])
     
   task,est = _setup_task_est(embeddings, queries, ncodebooks, lutconsts)
-  
-  for mult_method, mult_name in ((_np_dot, 'numpy'), (partial(est_mult, est), 'py_est'), (partial(mithral_mult,task), 'cpp_mithral')):
+  task.resize(embeddings.shape[0], num_queries)
+  for mult_method, mult_name in ((_np_dot, 'numpy'), (partial(est_mult, est), 'py_est'), (partial(mithral_mult,task), 'cpp_mithral'),(partial(mithral_mult_col,task), 'cpp_mithral_col'),):
     np.random.seed(seed)
     avg_per_by_k=defaultdict(list)
     for _ in range(NREPS):
@@ -351,6 +352,9 @@ def compare_on_emb_retrieval(embeddings, queries,data_name, NREPS,num_queries,ks
       search = queries[rand_ix, :]
       search_classes = rand_ix
       search_lengths = np.linalg.norm(search, axis=1)
+      if mult_name == 'cpp_mithral_col': 
+        search=search.astype(np.float32)
+
       dot_es, latency=mult_method(embeddings,search.T)
       normalized_cosine = np.apply_along_axis(lambda row: row/search_lengths, 
                                               1,
@@ -383,7 +387,7 @@ for e,q, name in [(img_emb, img_emb, "img_queries_img_ix"),
                   (text_emb, text_emb, "text_queries_text_ix")]:
   acc_results=compare_on_emb_retrieval(q,e,name, NREPS, num_queries,ks,ncodebooks=ncodebooks)
   summary_plot_acc(acc_results, ncodebooks, name=name, acc_title = f"Avg% the Closest Embedding is in Top-K {name}", save=True)
-
+  
 #%%
 def compare_dist_ret_from_true(embeddings, queries,data_name, NREPS, num_queries, ncodebooks=8,lutconsts=-1, seed=seed):
 
