@@ -210,6 +210,13 @@ PYBIND11_MODULE(mithral_wrapped, m) {
                     __m512 f32_  = _mm512_cvtepi32_ps(i32_);
                     __m512 fma = _mm512_fmadd_ps(f32, scales, offsets); 
                     __m512 fma_  = _mm512_fmadd_ps(f32_, scales, offsets);
+                    //_mm512_stream_ps((float*)(fma_ptr++), fma); 
+                    //_mm512_stream_ps((float*)(fma_ptr++), fma_); 
+                    // //makes no sense. out+16 - out = 64 bytes or 512 bits, same as (fma_ptr++)-fma_ptr.
+                    // //fma_ptr++ twice is same bits as out+32-out. But above code is correct and below code is incorrect
+                    //_mm512_stream_ps(out, fma);
+                    //_mm512_stream_ps(out+16, fma_);
+                    //out += 32;
                     _mm512_store_ps(fma_ptr++, fma);
                     _mm512_store_ps(fma_ptr++, fma_);
                     //*fma_ptr++   = fma;
@@ -227,8 +234,8 @@ PYBIND11_MODULE(mithral_wrapped, m) {
                     __m512 fma   = _mm512_fmadd_ps(f32, scales, offsets);
                     __m512 fma_  = _mm512_fmadd_ps(f32_, scales, offsets);
                     _mm512_store_ps(fma_ptr++, fma);
-                    _mm512_store_ps(fma_ptr++, fma_); // This is a little slower?
-                    //*fma_ptr++   = fma;
+                    _mm512_store_ps(fma_ptr++, fma_); 
+                    //*fma_ptr++   = fma; // This is a little faster?
                     //*fma_ptr++   = fma_;
                 }
             } else {

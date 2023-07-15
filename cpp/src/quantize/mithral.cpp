@@ -543,8 +543,22 @@ void mithral_lut_sparse(const float* Q, int nrows, int ncols, int ncodebooks,
 void mithral_scan(const uint8_t* codes, int64_t nblocks, int ncodebooks,
                   int noutputs, const uint8_t* luts, uint8_t* dists_out)
 {
+        switch(ncodebooks) {
+        // <=16 uses 16 for UpCast Every
+        case 2: mithral_scan_in_chunks<16, 2, uint8_t>(codes, nblocks, ncodebooks, noutputs, luts, dists_out);  break;
+        case 4: mithral_scan_in_chunks<16, 2, uint8_t>(codes, nblocks, ncodebooks, noutputs, luts, dists_out);  break;
+        case 8: mithral_scan_in_chunks<16, 2, uint8_t>(codes, nblocks, ncodebooks, noutputs, luts, dists_out);  break;
+        case 16: mithral_scan_in_chunks<16, 2, uint8_t>(codes, nblocks, ncodebooks, noutputs, luts, dists_out);  break;
+        case 32: mithral_scan_in_chunks<32, 2, uint8_t>(codes, nblocks, ncodebooks, noutputs, luts, dists_out);  break;
+        case 64: mithral_scan_in_chunks<64, 2, uint8_t>(codes, nblocks, ncodebooks, noutputs, luts, dists_out);  break;
+        case 128: mithral_scan_in_chunks<128, 2, uint8_t>(codes, nblocks, ncodebooks, noutputs, luts, dists_out);  break;
+        case 256: mithral_scan_in_chunks<256, 2, uint8_t>(codes, nblocks, ncodebooks, noutputs, luts, dists_out);  break;
+        default: assert(false);
+        
+    }
+    // mithral_scan_in_chunks<16, 2, uint8_t>(codes, nblocks, ncodebooks, noutputs, luts, dists_out);
+    
     // mithral_scan<128, 2>(codes, nblocks, ncodebooks, noutputs, luts, dists_out);
-    mithral_scan_in_chunks<16, 2, uint8_t>(codes, nblocks, ncodebooks, noutputs, luts, dists_out);
     // if (ncodebooks >= 4) {
     //     mithral_scan<128, 2>(codes, nblocks, ncodebooks, noutputs, luts, dists_out);
     // } else {

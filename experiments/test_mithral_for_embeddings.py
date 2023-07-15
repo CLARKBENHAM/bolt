@@ -69,7 +69,7 @@ empty_dist_results = lambda : pd.DataFrame(columns=dist_columns).astype(dist_typ
 seed=75
 num_queries=32 #512*8
 NREPS = 5
-ncodebooks=16
+ncodebooks=256 #16
 ks=[1,5,10,100]
 
 out_scale= 1 
@@ -386,7 +386,7 @@ for e,q, name in [(img_emb, img_emb, "img_queries_img_ix"),
                   (img_emb, text_emb, "text_queries_img_ix"),
                   (text_emb, text_emb, "text_queries_text_ix")]:
   acc_results=compare_on_emb_retrieval(q,e,name, NREPS, num_queries,ks,ncodebooks=ncodebooks)
-  summary_plot_acc(acc_results, ncodebooks, name=name, acc_title = f"Avg% the Closest Embedding is in Top-K {name}", save=True)
+  summary_plot_acc(acc_results, ncodebooks=ncodebooks, name=name, acc_title = f"Avg% the Closest Embedding is in Top-K {name}", save=True)
   
 #%%
 def compare_dist_ret_from_true(embeddings, queries,data_name, NREPS, num_queries, ncodebooks=8,lutconsts=-1, seed=seed):

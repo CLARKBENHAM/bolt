@@ -5,7 +5,7 @@
 	"version": "0.2.0",
 	"configurations": [
 	
-		{"name":"Python: Current File","type":"python","request":"launch","program":"${file}","purpose": ["debug-test"],"console":"integratedTerminal","justMyCode":false},
+		{"name":"Python: Current File","type":"python","request":"launch","program":"${file}","cwd": "${fileDirname}","purpose": ["debug-test"],"console":"integratedTerminal","justMyCode":false},
 		{"name":"Python: amm_main","type":"python","request":"launch","cwd": "/home/cbenham/bolt/experiments", "program":"run_amm_main.py","console":"integratedTerminal","justMyCode":true},
 		{
 			"name": "(gdb) Launch Mithral_main",

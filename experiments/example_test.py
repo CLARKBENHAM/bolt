@@ -30,7 +30,7 @@ import functools
 print = functools.partial(print, flush=True)
 
 assert 5 == mithral_wrapped.add(2, 3)
-print("Pybind11 wrapped correctly")
+print(os.getpid())
 
 #So C++ code's printout redirected to python
 libc = ctypes.CDLL(None)
@@ -198,7 +198,7 @@ Y_hat1=np.array(task.output().data)
 s=timer()
 task.run_matmul(True) 
 #.output() Returns a memoryview of type ColMatrix which is Eigen::Matrix<T, Eigen::Dynamic, 1>;
-Y_hat=np.asarray(task.output().data)
+Y_hat =np.array(task.amm.scan_ret_col_order_upcast(), copy=False)
 e=timer()
 num_dists=Y_hat.size
 print(f'time to run mithral with python bindings: {e-s:.7f}s',

@@ -142,8 +142,8 @@ template<class InputT> struct mithral_input_type_traits {};
 template<> struct mithral_input_type_traits<float> {
     using encoding_scales_type = float;
     using encoding_offsets_type = float;
-    //using output_type = uint16_t;  //Change output type here
-    using output_type = uint8_t; //R^2 is worse but ordering is about the same
+    using output_type = uint16_t;  //Change output type here
+    //using output_type = uint8_t; //R^2 is worse but ordering is about the same
 };
 template<> struct mithral_input_type_traits<int16_t> {
     using encoding_scales_type = uint8_t;
@@ -1084,6 +1084,8 @@ void quantize_luts(const float* luts_f32, int nrows, int ncodebooks,
             luts_f32, nrows, offsets, scaleby, out_luts); break;
         case 128: quantize_luts<128, RowTileSz>(
             luts_f32, nrows, offsets, scaleby, out_luts); break;
+        case 256: quantize_luts<256, RowTileSz>(
+            luts_f32, nrows, offsets, scaleby, out_luts); break;
         default: assert(false);  // unsupported ncodebooks
     }
 }
@@ -1263,11 +1265,14 @@ void mithral_scan(const uint8_t* codes, int64_t nblocks,
     static_assert(NBytes > 0, "Code length <= 0 is not valid");
     static_assert(UpcastEvery % 2 == 0, "UpcastEvery must be even");
     static_assert(UpcastEvery >= 2, "UpcastEvery must be >= 2");
-    static_assert(UpcastEvery <= 256, "UpcastEvery must be <= 256");
+    static_assert(UpcastEvery <= 256, "UpcastEvery must be <= 256, only average 128 times max");
     static_assert(is_power_of_2(UpcastEvery),
         "UpcastEvery must be a power of 2!");
+    // Upcast means that after average together N numbers, they're summed
     static constexpr int ncodebooks = 2 * NBytes;
     static constexpr int ncols = NBytes;
+    assert((!std::is_same<OutType, uint8_t>::value) || (UpcastEvery >= ncodebooks));
+        //"U8s always written straight to output; they're not summed across averaging groups (would saturate)"
     static constexpr int actually_upcast_every = MIN(MIN(UpcastEvery, ncodebooks), 128*2); //128 is largest can handle in averaging for colgroup_sz
     static constexpr int colgroup_sz = actually_upcast_every / 2;
     static_assert(is_power_of_2(colgroup_sz),
@@ -1279,8 +1284,8 @@ void mithral_scan(const uint8_t* codes, int64_t nblocks,
     static constexpr bool use_uint8_output = std::is_same<OutType, uint8_t>::value && ncolgroups == 1 && !Force16BitOutput;
     static constexpr int OutTileSz = _OutTileSz > 0 ? _OutTileSz : 1;
 
-    static constexpr bool avg_as_int8 = true; //use_uint8_output; 
-    static_assert(avg_as_int8 >= use_uint8_output, "use_uint8_output implies avg_as_int8, but could ouput int16 and avg_as_int8");
+    static constexpr bool avg_as_uint8 = true; //use_uint8_output; 
+    static_assert(avg_as_uint8 >= use_uint8_output, "use_uint8_output implies avg_as_uint8, but could ouput int16 and avg_as_uint8");
 
     //out_stride should always equal N since colmajor matrix? Won't always for last chunk of blocks from mithral_scan_in_chunks
     //int64_t out_stride = use_uint8_output ? nblocks * 32 : 2 * nblocks * 32; //int16 output should keep stride outputs the same
@@ -1363,7 +1368,7 @@ void mithral_scan(const uint8_t* codes, int64_t nblocks,
                     auto dists_low = _mm256_shuffle_epi8(lut_low, x_low);
                     auto dists_high = _mm256_shuffle_epi8(lut_high, x_high);
 
-                    if (avg_as_int8) {
+                    if (avg_as_uint8) {
                         auto avgs = _mm256_avg_epu8(dists_low, dists_high);
 
                         // update running averages; this is messy because you
@@ -1452,7 +1457,7 @@ void mithral_scan(const uint8_t* codes, int64_t nblocks,
             }
 
             
-            for (int mm = 0; avg_as_int8 && mm < OutTileSz; mm++) {
+            for (int mm = 0; avg_as_uint8 && mm < OutTileSz; mm++) {
                 auto group_avg = colgroup_sz == 1  ? avg_prev1[mm] :
                                  colgroup_sz == 2  ? avg_prev2[mm] :
                                  colgroup_sz == 4  ? avg_prev4[mm] :
@@ -1522,6 +1527,8 @@ void mithral_scan_T(const uint8_t* codes, int64_t nblocks, int ncodebooks,
         case 64: mithral_scan<32, UpcastEvery, OutTileSz>(
             codes, nblocks, luts, out, N); break;
         case 128: mithral_scan<64, UpcastEvery, OutTileSz>(
+            codes, nblocks, luts, out, N); break;
+        case 256: mithral_scan<128, UpcastEvery, OutTileSz>(
             codes, nblocks, luts, out, N); break;
         default: assert(false);  // unsupported ncodebooks
     }
