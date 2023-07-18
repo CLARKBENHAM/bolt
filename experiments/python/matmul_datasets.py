@@ -680,8 +680,10 @@ def load_cifar100_tasks():
     # print("logits_test.shape", logits_test.shape)
     # print("lbls_test.shape", lbls_test.shape)
     # lbls_hat_test = np.argmax(Y_test, axis=1)
+    # lbls_hat_train = np.argmax(Y_train, axis=1)
     # print("lbls_hat_test.shape", lbls_hat_test.shape)
-    # acc = np.mean(lbls_hat_test.ravel() == lbls_test.ravel())
+    # train_acc = np.mean(lbls_hat_train.ravel() == lbls_train.ravel())
+    # test_acc = np.mean(lbls_hat_test.ravel() == lbls_test.ravel())
     # print("Y_test: ", Y_test[:10])
     # print("Y_train head: ", Y_train[:10])
     # print("Y_train tail: ", Y_train[-10:])
@@ -692,7 +694,8 @@ def load_cifar100_tasks():
     # # print(lbls_test[:100])
     # print("lbls train:")
     # print(lbls_train[:100].ravel())
-    # print("acc: ", acc)
+    # print("train acc: ", train_acc) # acc=0.995
+    # print("test acc: ", test_acc) # acc=0.699
 
     info = {'problem': 'softmax', 'biases': b,
             'lbls_train': lbls_train, 'lbls_test': lbls_test}

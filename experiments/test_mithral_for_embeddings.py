@@ -112,8 +112,9 @@ def mithral_mult(task, E,Q):
   #task.run_matmul(True) # if true this changes out_scale and out_offset_sum; possibly to invalid/bad reasons TODO
   task.lut()
   task.scan()
-  Y_hat=task.amm.out_mat #raw out_mat if just care about relative order for predicting output. slice for test shape used
-  Y_hat=(Y_hat.astype(np.float32)*task.amm.ncodebooks/task.amm.out_scale) + task.amm.out_offset_sum
+  Y_hat =np.array(task.amm.scan_ret_col_order_upcast(), copy=False)
+  #Y_hat=task.amm.out_mat #raw out_mat if just care about relative order for predicting output. slice for test shape used
+  #Y_hat=(Y_hat.astype(np.float32)*task.amm.ncodebooks/task.amm.out_scale) + task.amm.out_offset_sum
   #Y_hat=(Y_hat.astype(np.uint16)*task.amm.ncodebooks/task.amm.out_scale) + task.amm.out_offset_sum
   #Y_hat=(Y_hat.astype(np.uint16)*task.amm.ncodebooks/out_scale) + out_offset_sum
   latency=time.perf_counter() - t
@@ -443,7 +444,7 @@ for e,q, name in [(img_emb, img_emb, "img_queries_img"),
                   (text_emb, text_emb, "text_queries_text")]:
   new = compare_dist_ret_from_true(e, q , name, NREPS*20, num_queries , ncodebooks=ncodebooks)
   dist_results = pd.concat([new, dist_results],ignore_index=True)
-
+  print(name, acc_results.groupby('mult_name').describe()['latency'])
 summary_plot_dist(dist_results, save=True)
 
 #%%  ###     Scrap

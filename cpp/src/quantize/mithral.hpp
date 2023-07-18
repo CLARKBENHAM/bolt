@@ -142,8 +142,8 @@ template<class InputT> struct mithral_input_type_traits {};
 template<> struct mithral_input_type_traits<float> {
     using encoding_scales_type = float;
     using encoding_offsets_type = float;
-    using output_type = uint16_t;  //Change output type here
-    //using output_type = uint8_t; //R^2 is worse but ordering is about the same
+    //using output_type = uint16_t;  //Change output type here
+    using output_type = uint8_t; //R^2 is worse but ordering is about the same
 };
 template<> struct mithral_input_type_traits<int16_t> {
     using encoding_scales_type = uint8_t;

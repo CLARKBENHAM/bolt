@@ -45,11 +45,11 @@ MetricsSoftmax = namedtuple("MetricsSoftmax", ["np_time", "py_fit_time", "py_est
 
 results=[]
 results_std=[]
-NREPS=5
-NAVG=4
-for data in itertools.chain(*data_sources):
+NREPS=2#10
+NAVG=3#30
+for data in itertools.chain(*data_sources[1:]):
   print("$$$$$data", data.name)
-  for ncodebooks in [2,4]:
+  for ncodebooks in [2,4,8,16,32,64]:
     print(f"ncodebooks={ncodebooks}")
     min_trials = []
     for _ in range(NAVG):
@@ -60,13 +60,14 @@ for data in itertools.chain(*data_sources):
         align32=len(Y_test)-(len(Y_test)%32)
         Y_test=Y_test[:align32]
         X_test=X_test[:align32]
+        Y =data.info['lbls_test'][:align32] # True cifar100 labels, Y_hat is only 70% correct
         lutconsts=-1
         t = time.perf_counter()
-        Y=X_test@W_test
+        Y_hat=X_test@W_test
         np_time=time.perf_counter() - t
-        #mse=np.mean((np.abs(np.ravel(Y) - np.ravel(Y_test)))**2)
+        #mse=np.mean((np.abs(np.ravel(Y_hat) - np.ravel(Y_test)))**2)
         #assert mse < 0.001*Y.size, mse
-        max_ix=np.apply_along_axis(np.argmax, 1, Y_test)
+        max_ix=np.apply_along_axis(np.argmax, 1, Y_hat)
         
         hparams_dict = {'ncodebooks': ncodebooks, 'lut_work_const': lutconsts}
         est = vq_amm.MithralMatmul(**hparams_dict)
@@ -77,7 +78,7 @@ for data in itertools.chain(*data_sources):
         t = time.perf_counter()
         Y_hat1 = est.predict(X_test, W_test)
         py_est_time=time.perf_counter() - t
-        py_est_r2 = r2_score(Y,Y_hat1)
+        py_est_r2 = r2_score(Y_hat,Y_hat1)
         py_max_ix=np.apply_along_axis(np.argmax, 1, Y_hat1)
         py_est_per_ix_kept=np.sum(py_max_ix==max_ix)/py_max_ix.size
         
@@ -100,12 +101,14 @@ for data in itertools.chain(*data_sources):
         #task.run_matmul(False)
         task.run_matmul(True) #Encodes test Q as LUT instead of using train_Q's luts 
         Y_hat2=task.amm.out_mat #Since we just care about relative order for predicting output
+        #Y_hat2 =np.array(task.amm.scan_ret_col_order_upcast(), copy=False) # 2-3x slower, upcasting doesn't add accuracy
         cpp_est_time=time.perf_counter() - t
         #Y_hat2=(Y_hat2.astype(np.uint16)*task.amm.ncodebooks/task.amm.out_scale) + task.amm.out_offset_sum
-        Y_hat2=(Y_hat2.astype(np.float32)*task.amm.ncodebooks/task.amm.out_scale) + task.amm.out_offset_sum
-        cpp_est_r2=r2_score(Y, Y_hat2)
+        #Y_hat2=(Y_hat2.astype(np.float32)*task.amm.ncodebooks/task.amm.out_scale) + task.amm.out_offset_sum
+        cpp_est_r2=r2_score(Y_hat, Y_hat2)
         cpp_max_ix=np.apply_along_axis(np.argmax, 1, Y_hat2)
-        cpp_est_per_ix_kept=np.sum(cpp_max_ix==max_ix)/cpp_max_ix.size
+        #cpp_est_per_ix_kept=np.mean(cpp_max_ix==max_ix) # How often the same as mat mutl
+        cpp_est_per_ix_kept=np.mean(cpp_max_ix==Y) # How often correct
         o= MetricsSoftmax(np_time, py_fit_time, py_est_time, py_est_r2, py_est_per_ix_kept, copy_to_cpp_time, cpp_est_time, cpp_est_r2, cpp_est_per_ix_kept)
         trials += [o]
 
@@ -125,7 +128,8 @@ for data in itertools.chain(*data_sources):
   print(f"ncodebooks={ncodebooks}")
   print(f"Avg over {NAVG} of Min of {NREPS} Numpy Matrix mult times: {min_np_times}, {[i.np_time for i in results_std]}")
   print(f"Avg over {NAVG} of Min of {NREPS} Mithral times: {min_mithral_times}, {[i.cpp_est_time for i in results_std]}")
-  print(f"Avg over {NAVG} of Min of {NREPS} cpp_est_per_ix_keps: {cpp_est_per_ix_kepts}")
+  print(f"Avg over {NAVG} of Min of {NREPS} cpp_est_per_ix_keeps: {cpp_est_per_ix_kepts}")
+  print(f"Numpy Matrix mult per_ix_keep {np.mean(Y==max_ix)}" )
   print(f"Py/C++ time ratio: {[i/j for i,j in zip(min_np_times, min_mithral_times)]}")
 
 #%%
