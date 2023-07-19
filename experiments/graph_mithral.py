@@ -100,8 +100,8 @@ for data in itertools.chain(*data_sources[1:]):
         #task.scan() 
         #task.run_matmul(False)
         task.run_matmul(True) #Encodes test Q as LUT instead of using train_Q's luts 
-        Y_hat2=task.amm.out_mat #Since we just care about relative order for predicting output
-        #Y_hat2 =np.array(task.amm.scan_ret_col_order_upcast(), copy=False) # 2-3x slower, upcasting doesn't add accuracy
+        #Y_hat2=task.amm.out_mat #Since we just care about relative order for predicting output
+        Y_hat2 =np.array(task.amm.scan_ret_col_order_upcast(), copy=False) # 2-3x slower, upcasting doesn't add accuracy
         cpp_est_time=time.perf_counter() - t
         #Y_hat2=(Y_hat2.astype(np.uint16)*task.amm.ncodebooks/task.amm.out_scale) + task.amm.out_offset_sum
         #Y_hat2=(Y_hat2.astype(np.float32)*task.amm.ncodebooks/task.amm.out_scale) + task.amm.out_offset_sum

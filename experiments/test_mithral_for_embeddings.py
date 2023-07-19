@@ -34,6 +34,7 @@ from datetime import datetime
 from python import matmul_datasets as md 
 from python import vq_amm
 from copy_to_amm import extract_py_vars, copy_python_luts, copy_python_to_amm, extract_mithral_vars
+import faiss
 
 try:
   repo_path=os.path.join(os.path.dirname(__file__), "..")
@@ -69,7 +70,7 @@ empty_dist_results = lambda : pd.DataFrame(columns=dist_columns).astype(dist_typ
 seed=75
 num_queries=32 #512*8
 NREPS = 5
-ncodebooks=256 #16
+ncodebooks=16
 ks=[1,5,10,100]
 
 out_scale= 1 
@@ -281,6 +282,8 @@ for data in itertools.chain(*data_sources[1:]):
 
 #summary_plot_acc(acc_results, ncodebooks, name=data.name, save=False)
 #acc_results.to_csv("py_v_cpp_mithral_for_acc_on_cifar100.csv")
+#%%
+
 
 gb = acc_results.groupby(['mult_name', 'k'])['avg_per_same']
 l_and_sd = acc_results.query("k==1").groupby('mult_name').describe()['latency'][['mean', 'std']]

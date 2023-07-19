@@ -526,15 +526,6 @@ void mithral_lut_sparse(const float* Q, int nrows, int ncols, int ncodebooks,
     float tmp_offsets[ncodebooks];
     mithral_learn_lut_offsets_scales(tmp_lut_f32, nrows, ncodebooks, 
         tmp_offsets, out_offset_sum, out_scale);
-    // //WARN GRIB TEMP TEST TODO uncomment, or fix why this isn't great
-    // float tmp_out_scale = out_scale; // assumes will be set by python
-    // float tmp_out_offset_sum = out_offset_sum;
-    // float& ref_tmp_scale = tmp_out_scale;
-    // float& ref_tmp_offset = tmp_out_offset_sum;
-    // mithral_learn_lut_offsets_scales(tmp_lut_f32, nrows, ncodebooks, 
-    //     tmp_offsets, ref_tmp_offset, ref_tmp_scale);
-    // assert(ref_tmp_scale != out_scale);
-    // assert(ref_tmp_offset != out_offset_sum);
     quantize_luts(tmp_lut_f32, nrows, ncodebooks, tmp_offsets, out_scale, out);
 }
 
@@ -635,3 +626,22 @@ void mithral_scan(const uint8_t* codes, int64_t nblocks, int ncodebooks,
 //         }
 //     }
 // }
+
+
+// ================================================================ embed_search
+
+void mithral_embed(const uint8_t* codes, int64_t nblocks, int ncodebooks,
+                  int noutputs, const uint8_t* luts, int* closest_ix)
+{
+        switch(ncodebooks) {
+        case 2: mithral_embed_in_chunks<16    >(codes , nblocks , ncodebooks , noutputs , luts , closest_ix);  break;
+        case 4: mithral_embed_in_chunks<16    >(codes , nblocks , ncodebooks , noutputs , luts , closest_ix);  break;
+        case 8: mithral_embed_in_chunks<16    >(codes , nblocks , ncodebooks , noutputs , luts , closest_ix);  break;
+        case 16: mithral_embed_in_chunks<16   >(codes , nblocks , ncodebooks , noutputs , luts , closest_ix);  break;
+        case 32: mithral_embed_in_chunks<32   >(codes , nblocks , ncodebooks , noutputs , luts , closest_ix);  break;
+        case 64: mithral_embed_in_chunks<64   >(codes , nblocks , ncodebooks , noutputs , luts , closest_ix);  break;
+        case 128: mithral_embed_in_chunks<128 >(codes , nblocks , ncodebooks , noutputs , luts , closest_ix);  break;
+        case 256: mithral_embed_in_chunks<256 >(codes , nblocks , ncodebooks , noutputs , luts , closest_ix);  break;
+        default: assert(false);
+    }
+}

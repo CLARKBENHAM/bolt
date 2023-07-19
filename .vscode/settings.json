@@ -6,6 +6,13 @@
 		"array": "cpp",
 		"string": "cpp",
 		"string_view": "cpp",
-		"variant": "cpp"
+		"variant": "cpp",
+		"*.tcc": "cpp",
+		"deque": "cpp",
+		"forward_list": "cpp",
+		"list": "cpp",
+		"vector": "cpp",
+		"hash_map": "cpp",
+		"valarray": "cpp"
 	}
 }

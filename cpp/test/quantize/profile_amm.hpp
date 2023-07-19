@@ -117,6 +117,7 @@ struct mithral_amm_task { // Class which all data uses. Copy this one.
     
     void lut() { amm.lut(Q.data()); }
     void scan() { amm.scan(); }
+    void embed() { amm.embed(); }
 
     void run_matmul(bool create_lut=true) {
         encode();
