@@ -249,30 +249,38 @@ PYBIND11_MODULE(mithral_wrapped, m) {
             );
         }, py::return_value_policy::take_ownership)
         
-        .def("embedding_search_ret_closest", [](mithral_amm<float> &self) { // convert out_mat into correct floats
+        // return ix's of closest embeddings in X for each query in Q by cosine dist
+        .def("embedding_search_ret_closest_ixs", [](mithral_amm<float> &self) {
             self.scan();
             const output_t * in = self.out_mat.data();
-            int topK = 32;
-            float * out  =static_cast<float*>(aligned_alloc(64, topK * self.M * sizeof(float))); // python takes ownership at end
-            __m256 max_ixs = _mm256_set1_epi32(0);
-            __m128 max_vals = _mm256_set1_epu16(0);
+            int topK = 16;
+            int * out  =static_cast<int*>(aligned_alloc(64, topK * self.M * sizeof(int))); // python takes ownership at end
 
             if (std::is_same<output_t, uint8_t>::value) {
-                __m256i* u8_ptr = _mm256_loadu_si256(in); // N has to be multiple of 32, scan_block_nrows; not 64
-                for (int index = 0; index < self ; index += 32) {
-                    __m256i u8 = _mm_loadu_si256(u8_ptr++);
+                // each querie's output
+                for (int ncol = 0; ncol < self.M; ncol += 1) {
+                    __m256 max_ixs = _mm256_set1_epi32(0);
+                    __m128 max_vals = _mm128_set1_epu8(0);
+                    __m256i* u8_ptr = _mm256_loadu_si256(in  + ncol * N);
 
-                    __m128i u8_  = _mm_loadu_si128(u8_ptr++);
-                    __m512i i32 = _mm512_cvtepu8_epi32(u8);
-                    __m512i i32_ = _mm512_cvtepu8_epi32(u8_);
-                    __m512 f32 = _mm512_cvtepi32_ps(i32);
-                    __m512 f32_  = _mm512_cvtepi32_ps(i32_);
-                    __m512 fma = _mm512_fmadd_ps(f32, scales, offsets); 
-                    __m512 fma_  = _mm512_fmadd_ps(f32_, scales, offsets);
-                    _mm512_store_ps(fma_ptr++, fma);
-                    _mm512_store_ps(fma_ptr++, fma_);
+                    for (int index = 0; index < self.N ; index += 32) {
+                        __m256i u8 = _mm_loadu_si256(u8_ptr++);
+
+                        __m128i u8_  = _mm_loadu_si128(u8_ptr++);
+                        __m512i i32 = _mm512_cvtepu8_epi32(u8);
+                        __m512i i32_ = _mm512_cvtepu8_epi32(u8_);
+                        __m512 f32 = _mm512_cvtepi32_ps(i32);
+                        __m512 f32_  = _mm512_cvtepi32_ps(i32_);
+                        __m512 fma = _mm512_fmadd_ps(f32, scales, offsets); 
+                        __m512 fma_  = _mm512_fmadd_ps(f32_, scales, offsets);
+                    }
+                    // get index for max values
+                    _mm256_store_ps(out, max_ixs);
+                    out += topK;
                 }
             } else if (std::is_same<output_t, uint16_t>::value)  {
+                assert(false);
+                __m128 max_vals = _mm256_set1_epu16(0);
                 __m256i* u16_ptr = (__m256i*)in;
             } else {
                 throw;
@@ -280,7 +288,7 @@ PYBIND11_MODULE(mithral_wrapped, m) {
             return py::memoryview::from_buffer(
                 out,                               // buffer pointer
                 { topK, self.M },                                  // shape (rows, cols)
-                { sizeof(float), sizeof(float) * topK }   // strides in bytes
+                { sizeof(int), sizeof(int) * topK }   // strides in bytes
             );
         }, py::return_value_policy::take_ownership)
         
