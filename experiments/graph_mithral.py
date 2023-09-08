@@ -107,8 +107,8 @@ for data in itertools.chain(*data_sources[1:]):
         #Y_hat2=(Y_hat2.astype(np.float32)*task.amm.ncodebooks/task.amm.out_scale) + task.amm.out_offset_sum
         cpp_est_r2=r2_score(Y_hat, Y_hat2)
         cpp_max_ix=np.apply_along_axis(np.argmax, 1, Y_hat2)
-        #cpp_est_per_ix_kept=np.mean(cpp_max_ix==max_ix) # How often the same as mat mutl
-        cpp_est_per_ix_kept=np.mean(cpp_max_ix==Y) # How often correct
+        cpp_est_per_ix_kept=np.mean(cpp_max_ix==max_ix) # How often the same as mat mutl, what we care about
+        #cpp_est_per_ix_kept=np.mean(cpp_max_ix==Y) # How often correct, what was reported in the paper
         o= MetricsSoftmax(np_time, py_fit_time, py_est_time, py_est_r2, py_est_per_ix_kept, copy_to_cpp_time, cpp_est_time, cpp_est_r2, cpp_est_per_ix_kept)
         trials += [o]
 

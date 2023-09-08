@@ -1,0 +1,19 @@
+{
+  "folders": [
+	{
+		"name": "bolt",
+		"path": ".."
+	}
+],
+  "settings": {
+    "cmake.configureOnOpen": false,
+    "files.associations": {
+      "tensor": "cpp",
+      "alignedvector3": "cpp",
+      "array": "cpp",
+      "string": "cpp",
+      "string_view": "cpp",
+      "variant": "cpp"
+    }
+  }
+}
