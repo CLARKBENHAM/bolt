@@ -6,12 +6,13 @@ import pprint
 import scipy
 import time
 
-from . import amm
-from . import matmul_datasets as md
-from . import pyience as pyn
-from . import compress
+# If used relative imports run with `python -m python.amm_main`
+from python import amm
+from python import matmul_datasets as md
+from python import pyience as pyn
+from python import compress
 
-from . import amm_methods as methods
+from python import amm_methods as methods
 
 from joblib import Memory
 _memory = Memory('.', verbose=0)
@@ -483,7 +484,7 @@ def main_all(methods=methods.USE_METHODS):
     main_cifar10(methods=methods)
     main_cifar100(methods=methods)
     # main_ecg(methods=methods)
-    main_caltech(methods=methods)
+    #main_caltech(methods=methods)
 
 
 def main():
@@ -538,4 +539,5 @@ def main():
 if __name__ == '__main__':
     np.set_printoptions(formatter={'float': lambda f: "{:.2f}".format(f)},
                         linewidth=100)
-    main()
+    #main()
+    main_all()
