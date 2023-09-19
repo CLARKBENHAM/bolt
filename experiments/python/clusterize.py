@@ -1133,7 +1133,7 @@ def _sparse_encoded_lstsq_elim_v2(X_enc, Y, nnz_per_centroid, K=16,
         W = encoded_lstsq(X_bin=X_bin, Y=Y, stable_ridge=stable_ridge)
 
     # score all blocks of W
-    all_scores = np.empty((ncodebooks, M), dtype=np.float)  # C x M
+    all_scores = np.empty((ncodebooks, M), dtype=np.float32)  # C x M
     for c in range(ncodebooks):
         Xc = X_enc[:, c].reshape(-1, 1)
         start_idx = c * K

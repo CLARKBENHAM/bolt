@@ -6,6 +6,14 @@ import numpy as np
 from . import vquantizers as vq
 from . import amm
 
+from copy_to_amm import copy_python_to_amm, extract_py_vars, copy_python_luts
+import os
+import sys
+repo_path = os.path.abspath('')[:os.path.abspath('').index('/bolt/') + 6]
+sys.path.append(repo_path)
+print(sys.path)
+from cpp import mithral_wrapped
+
 KEY_NLOOKUPS = 'nlookups'
 
 
@@ -325,3 +333,61 @@ class MithralPQ(MithralMatmul):
 
     def __init__(self, ncodebooks):
         super().__init__(ncodebooks=ncodebooks, lut_work_const=1)
+
+### Calling Wrapped C++
+class MithralMatmulCppImp(MithralMatmul):
+    # How do I set A and B seperately from each other? I'd have to change C++ code
+    def __init__(self, ncodebooks, keep_cpp_type=False, task_type='mithral_amm_float', create_lut_at_test=False, lut_work_const=-1):
+        """
+        Args:
+            keep_cpp_type: if the C++ output type should be kept. Else the output is converted to a float (slower)
+                Set true if only care about the relative order amoung columns for predicting category
+            task_type (str, optional): _description_. Defaults to 'mithral_amm_float'.
+            create_lut_at_test (bool, optional): If to re-create luts using test time values of B. 
+                Defaults to False.
+        """
+        super().__init__(ncodebooks=ncodebooks, lut_work_const=lut_work_const)
+        self.keep_cpp_type=keep_cpp_type
+        self.task_type =task_type
+        self.create_lut_at_test=create_lut_at_test
+        if task_type=='mithral_amm_float':
+            self.make_task = mithral_wrapped.mithral_amm_task_float
+            self.task=None
+        else:
+            assert(f'bad task_type {task_type}') 
+    
+    def fit(self, A, B, Y=None):
+        N, D = A.shape
+        _,M = B.shape
+        #if D < self.ncodebooks:
+        #    raise amm.InvalidParametersException(
+        #        'D < C: {} < {}'.format(D, self.ncodebooks))
+        #self.enc.fit(A, B.T)
+        super().fit(A,B,Y)
+        self.task = self.make_task(N,D,M, self.ncodebooks, self.lut_work_const)
+        self.task.X=A
+        self.task.Q=B
+        copy_python_to_amm(self, self.task.amm)
+        if not self.create_lut_at_test:
+            #copy_python_luts(self, self.task.amm)
+            self.task.lut()# in C++ has R^2 of 0.999 with Py
+    
+    def set_B(self,B):
+        # called in _eval_task when Keeping Q fixed and only changing X
+        super().set_B(B)
+        #self.luts, self.offset, self.scale = self.enc.encode_Q(B.T)
+        copy_python_to_amm(self, self.task.amm)
+        if not self.create_lut_at_test:
+            self.task.lut()
+            
+    #What outputs Y_hat matrix, assume only called once? 
+    def __call__(self, A, B):
+        if self.task is None:
+            self.fit(A,B)
+        # True Encodes test Q as LUT instead of using train_Q's luts 
+        self.task.run_matmul(self.create_lut_at_test) 
+        Y_hat=self.task.amm.out_mat 
+        if not self.keep_cpp_type:
+            Y_hat=(Y_hat.astype(np.uint16)*self.task.amm.ncodebooks/self.task.amm.out_scale) + self.task.amm.out_offset_sum
+        return Y_hat
+               
