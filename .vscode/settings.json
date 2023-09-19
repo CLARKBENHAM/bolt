@@ -1,11 +1,21 @@
 {
 	"cmake.configureOnOpen": false,
 	"files.associations": {
+		"MLTable": "yaml",
 		"tensor": "cpp",
 		"alignedvector3": "cpp",
 		"array": "cpp",
 		"string": "cpp",
 		"string_view": "cpp",
-		"variant": "cpp"
-	}
+		"variant": "cpp",
+		"chrono": "cpp",
+		"*.tcc": "cpp",
+		"deque": "cpp",
+		"forward_list": "cpp",
+		"list": "cpp",
+		"vector": "cpp",
+		"hash_map": "cpp",
+		"valarray": "cpp"
+	},
+	"cmake.sourceDirectory": "/Users/clarkbenham/bolt/cpp"
 }

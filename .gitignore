@@ -112,6 +112,7 @@ docs/
 # Experiment Output
 output/
 experiments/results/amm/*
+cpp/results/*
 
 #Experiment Input
 experiments/assets

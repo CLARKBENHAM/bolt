@@ -186,8 +186,6 @@ PYBIND11_MODULE(mithral_wrapped, m) {
                 const __m512 offsets = _mm512_set1_ps(self.out_offset_sum);
                 __m512* fma_ptr = (__m512*)out;
                 if (std::is_same<output_t, uint8_t>::value) {
-<<<<<<< HEAD
-=======
                     // Works, but slightly slower. In case on machine w/o avx2
                     //const __m256 scales = _mm256_set1_ps(self.ncodebooks/self.out_scale);
                     //const __m256 offsets = _mm256_set1_ps(self.out_offset_sum);
@@ -203,7 +201,6 @@ PYBIND11_MODULE(mithral_wrapped, m) {
                     //    _mm256_storeu_ps(out + index, fma_lo);
                     //    _mm256_storeu_ps(out + 8 + index, fma_hi);
                     //}
->>>>>>> same avx2 build thing as before
                     __m128i* u8_ptr = (__m128i*)in;
                     // N has to be multiple of 32, scan_block_nrows
                     for (int index = 0; index < NM ; index += 32) {

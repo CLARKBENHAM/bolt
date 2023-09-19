@@ -23,6 +23,7 @@ sudo docker build .  -t $USER/extension-script:latest
 sudo docker run -v /home/$USER/:/home/$USER --rm --cap-add=SYS_PTRACE --security-opt seccomp=unconfined -dit $USER/extension-script:latest
 # -v   to share local files
 # --rm --cap-add=SYS_PTRACE --security-opt seccomp=unconfined   to allow debuging
+# On mac use /Users/$USER instead of /home/$USER
 
 #With VScode, running as notebook
 Locally inside VScode Docker tab right click and  "Attach Visual Studio Code" 
