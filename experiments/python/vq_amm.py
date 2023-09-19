@@ -11,7 +11,6 @@ import os
 import sys
 repo_path = os.path.abspath('')[:os.path.abspath('').index('/bolt/') + 6]
 sys.path.append(repo_path)
-print(sys.path)
 from cpp import mithral_wrapped
 
 KEY_NLOOKUPS = 'nlookups'

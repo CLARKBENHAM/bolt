@@ -49,26 +49,27 @@ NREPS=2#10
 NAVG=3#30
 for data in itertools.chain(*data_sources[1:]):
   print("$$$$$data", data.name)
-  for ncodebooks in [2,4,8,16,32,64]:
+  for ncodebooks in [ 2**i for i in range(1, int(np.log2(data.info["biases"].size)) + 1)]:
     print(f"ncodebooks={ncodebooks}")
+    [W_test,W_train, X_test, X_train, Y_test, Y_train] = attrgetter('W_test','W_train', 'X_test', 'X_train', 'Y_test', 'Y_train')(data)
+    #Mithral C++ doesn't work with counts not aligned to 32
+    align32=len(Y_test)-(len(Y_test)%32)
+    Y_test=Y_test[:align32]
+    X_test=X_test[:align32]
+    Y =data.info['lbls_test'][:align32] # True cifar100 labels, Y_hat is only 70% correct
     min_trials = []
     for _ in range(NAVG):
       trials=[]
       for _ in range(NREPS):
-        [W_test,W_train, X_test, X_train, Y_test, Y_train] = attrgetter('W_test','W_train', 'X_test', 'X_train', 'Y_test', 'Y_train')(data)
-        #Mithral C++ doesn't work with counts not aligned to 32
-        align32=len(Y_test)-(len(Y_test)%32)
-        Y_test=Y_test[:align32]
-        X_test=X_test[:align32]
-        Y =data.info['lbls_test'][:align32] # True cifar100 labels, Y_hat is only 70% correct
-        lutconsts=-1
         t = time.perf_counter()
         Y_hat=X_test@W_test
         np_time=time.perf_counter() - t
         #mse=np.mean((np.abs(np.ravel(Y_hat) - np.ravel(Y_test)))**2)
         #assert mse < 0.001*Y.size, mse
         max_ix=np.apply_along_axis(np.argmax, 1, Y_hat)
-        
+        classifier_acc = np.mean(max_ix == Y)
+          
+        lutconsts=-1
         hparams_dict = {'ncodebooks': ncodebooks, 'lut_work_const': lutconsts}
         est = vq_amm.MithralMatmul(**hparams_dict)
         t = time.perf_counter()
@@ -80,7 +81,7 @@ for data in itertools.chain(*data_sources[1:]):
         py_est_time=time.perf_counter() - t
         py_est_r2 = r2_score(Y_hat,Y_hat1)
         py_max_ix=np.apply_along_axis(np.argmax, 1, Y_hat1)
-        py_est_per_ix_kept=np.sum(py_max_ix==max_ix)/py_max_ix.size
+        py_est_per_ix_kept=np.mean(py_max_ix==Y)
         
         task=mithral_wrapped.mithral_amm_task_float(*X_test.shape,W_test.shape[1], ncodebooks, lutconsts)
         task.amm.out_mat = np.zeros(task.amm.out_mat.shape)
@@ -122,14 +123,16 @@ for data in itertools.chain(*data_sources[1:]):
     results += [MetricsSoftmax(*np.average(min_trials, axis=0))]
     results_std += [MetricsSoftmax(*np.std(min_trials, axis=0))]
     
-  min_np_times=list(map(lambda i: i.np_time, results))
-  min_mithral_times=list(map(lambda i: i.cpp_est_time, results))
-  cpp_est_per_ix_kepts=list(map(lambda i: i.cpp_est_per_ix_kept, results))
+  min_np_times = [i.np_time for i in results]
+  min_mithral_times = [i.cpp_est_time for i in results]
+  cpp_est_per_ix_kepts = [i.cpp_est_per_ix_kept for i in results]
   print(f"ncodebooks={ncodebooks}")
   print(f"Avg over {NAVG} of Min of {NREPS} Numpy Matrix mult times: {min_np_times}, {[i.np_time for i in results_std]}")
   print(f"Avg over {NAVG} of Min of {NREPS} Mithral times: {min_mithral_times}, {[i.cpp_est_time for i in results_std]}")
   print(f"Avg over {NAVG} of Min of {NREPS} cpp_est_per_ix_keeps: {cpp_est_per_ix_kepts}")
-  print(f"Numpy Matrix mult per_ix_keep {np.mean(Y==max_ix)}" )
+  print(f"Numpy Matrix mult per_ix_keep, classifier accuracy {np.mean(Y==max_ix)}")
+  print(f"cpp_est_per_ix_keeps/true accuracy of classifier : {[i/classifier_acc for i in cpp_est_per_ix_kepts]}")
+  print(f"cpp_est_per_ix_keeps - true accuracy of classifier : {[i - classifier_acc for i in cpp_est_per_ix_kepts]}")
   print(f"Py/C++ time ratio: {[i/j for i,j in zip(min_np_times, min_mithral_times)]}")
 
 #%%
