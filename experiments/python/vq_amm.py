@@ -341,8 +341,8 @@ class MithralMatmulCppImp(MithralMatmul):
         Args:
             keep_cpp_type: if the C++ output type should be kept. Else the output is converted to a float (slower)
                 Set true if only care about the relative order amoung columns for predicting category
-            task_type (str, optional): _description_. Defaults to 'mithral_amm_float'.
-            create_lut_at_test (bool, optional): If to re-create luts using test time values of B. 
+            task_type (str, optional): _description_. Defaults to 'mithral_amm_float', where '_float' is the input type expected
+            create_lut_at_test (bool, optional): If to re-create luts using test time values of B
                 Defaults to False.
         """
         super().__init__(ncodebooks=ncodebooks, lut_work_const=lut_work_const)
