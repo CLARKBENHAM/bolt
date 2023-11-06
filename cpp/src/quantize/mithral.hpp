@@ -253,10 +253,7 @@ struct mithral_amm {
                     out_offset_sum, out_scale,
                     (const uint8_t*)luts.data(), out_mat.data());
     }
-
-    void scan_ret_col_order_upcast() {
-        
-    }
+    
     //size params
     const int nsplits_per_codebook;
     const int total_nsplits;

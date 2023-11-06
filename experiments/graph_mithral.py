@@ -45,11 +45,12 @@ MetricsSoftmax = namedtuple("MetricsSoftmax", ["np_time", "py_fit_time", "py_est
 
 results=[]
 results_std=[]
+codebook_arr = [2,4,8] #[ 2**i for i in range(1, int(np.log2(data.info["biases"].size)) + 1)]:
 NREPS=2#10
 NAVG=3#30
-for data in itertools.chain(*data_sources[1:]):
+for data in itertools.chain(*data_sources):
   print("$$$$$data", data.name)
-  for ncodebooks in [ 2**i for i in range(1, int(np.log2(data.info["biases"].size)) + 1)]:
+  for ncodebooks in codebook_arr:
     print(f"ncodebooks={ncodebooks}")
     [W_test,W_train, X_test, X_train, Y_test, Y_train] = attrgetter('W_test','W_train', 'X_test', 'X_train', 'Y_test', 'Y_train')(data)
     #Mithral C++ doesn't work with counts not aligned to 32
@@ -66,6 +67,7 @@ for data in itertools.chain(*data_sources[1:]):
         np_time=time.perf_counter() - t
         #mse=np.mean((np.abs(np.ravel(Y_hat) - np.ravel(Y_test)))**2)
         #assert mse < 0.001*Y.size, mse
+        #assert np.all(W_test == W_train)
         max_ix=np.apply_along_axis(np.argmax, 1, Y_hat)
         classifier_acc = np.mean(max_ix == Y)
           
@@ -91,25 +93,24 @@ for data in itertools.chain(*data_sources[1:]):
         task.X=X_test
         task.Q=W_test
         copy_to_cpp_time=time.perf_counter() - t
-        task.encode()
+        #task.encode() #X is what changes each time, need to include in timing
   
         #task.Q=W_train[:len(W_test)]  # W_train and W_test the same here; not needed
         #task.lut() #making luts in C++ and Py has R^2 of 0.999 
         #task.Q =W_test
         t = time.perf_counter()
-        #task.lut()
-        #task.scan() 
-        #task.run_matmul(False)
-        task.run_matmul(True) #Encodes test Q as LUT instead of using train_Q's luts 
+        #task.encode()
+        #Y_hat2=task.amm.scan_ret_col_order_upcast() # slower, upcasting doesn't add pred accuracy only R2
+        
+        task.run_matmul(False) #Use train Luts since w_train==w_test
         Y_hat2=task.amm.out_mat #Since we just care about relative order for predicting output
-        #Y_hat2 =np.array(task.amm.scan_ret_col_order_upcast(), copy=False) # 2-3x slower, upcasting doesn't add accuracy
         cpp_est_time=time.perf_counter() - t
-        #Y_hat2=(Y_hat2.astype(np.uint16)*task.amm.ncodebooks/task.amm.out_scale) + task.amm.out_offset_sum
-        #Y_hat2=(Y_hat2.astype(np.float32)*task.amm.ncodebooks/task.amm.out_scale) + task.amm.out_offset_sum
+        ## correct output if returning uint8s
+        #Y_hat2=(Y_hat2.astype(np.float32)*task.amm.ncodebooks/task.amm.out_scale) + task.amm.out_offset_sum 
         cpp_est_r2=r2_score(Y_hat, Y_hat2)
         cpp_max_ix=np.apply_along_axis(np.argmax, 1, Y_hat2)
-        cpp_est_per_ix_kept=np.mean(cpp_max_ix==max_ix) # How often the same as mat mutl, what we care about
-        #cpp_est_per_ix_kept=np.mean(cpp_max_ix==Y) # How often correct, what was reported in the paper
+        #cpp_est_per_ix_kept=np.mean(cpp_max_ix==max_ix) # How often the same as mat mutl, what we care about
+        cpp_est_per_ix_kept=np.mean(cpp_max_ix==Y) # How often correct, what was reported in the paper
         o= MetricsSoftmax(np_time, py_fit_time, py_est_time, py_est_r2, py_est_per_ix_kept, copy_to_cpp_time, cpp_est_time, cpp_est_r2, cpp_est_per_ix_kept)
         trials += [o]
 
@@ -122,13 +123,15 @@ for data in itertools.chain(*data_sources[1:]):
       
     results += [MetricsSoftmax(*np.average(min_trials, axis=0))]
     results_std += [MetricsSoftmax(*np.std(min_trials, axis=0))]
-    
-  min_np_times = [i.np_time for i in results]
-  min_mithral_times = [i.cpp_est_time for i in results]
-  cpp_est_per_ix_kepts = [i.cpp_est_per_ix_kept for i in results]
+  
+  rec_results = results[-len(codebook_arr):]
+  rec_results_std=results_std[-len(codebook_arr):]
+  min_np_times = [i.np_time for i in rec_results]
+  min_mithral_times = [i.cpp_est_time for i in rec_results]
+  cpp_est_per_ix_kepts = [i.cpp_est_per_ix_kept for i in rec_results]
   print(f"ncodebooks={ncodebooks}")
-  print(f"Avg over {NAVG} of Min of {NREPS} Numpy Matrix mult times: {min_np_times}, {[i.np_time for i in results_std]}")
-  print(f"Avg over {NAVG} of Min of {NREPS} Mithral times: {min_mithral_times}, {[i.cpp_est_time for i in results_std]}")
+  print(f"Avg over {NAVG} of Min of {NREPS} Numpy Matrix mult times: {min_np_times}, SD {[i.np_time for i in rec_results_std]}")
+  print(f"Avg over {NAVG} of Min of {NREPS} Mithral times: {min_mithral_times}, SD {[i.cpp_est_time for i in rec_results_std]}")
   print(f"Avg over {NAVG} of Min of {NREPS} cpp_est_per_ix_keeps: {cpp_est_per_ix_kepts}")
   print(f"Numpy Matrix mult per_ix_keep, classifier accuracy {np.mean(Y==max_ix)}")
   print(f"cpp_est_per_ix_keeps/true accuracy of classifier : {[i/classifier_acc for i in cpp_est_per_ix_kepts]}")

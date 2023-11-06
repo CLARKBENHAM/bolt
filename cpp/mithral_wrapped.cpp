@@ -14,6 +14,7 @@
 #endif
 #include <string> 
 #include <stdint.h>
+#include <stdlib.h>
 
 using namespace std;
 
@@ -178,7 +179,7 @@ PYBIND11_MODULE(mithral_wrapped, m) {
         })
         .def("scan_ret_col_order_upcast", [](mithral_amm<float> &self) { // convert out_mat into correct floats
             self.scan();
-            const output_t * in = self.out_mat.data();
+            const output_t * in = self.out_mat.data(); // column order
             auto NM = self.N * self.M; 
             float * out  =static_cast<float*>(aligned_alloc(64, NM* sizeof(float))); // python takes ownership at end
             #ifdef __AVX512F__
@@ -233,7 +234,7 @@ PYBIND11_MODULE(mithral_wrapped, m) {
                 const __m256 scales = _mm256_set1_ps(self.ncodebooks/self.out_scale);
                 const __m256 offsets = _mm256_set1_ps(self.out_offset_sum);
                 if (std::is_same<output_t, uint8_t>::value) {
-                    for (int index = 0; index < NM ; index += 8) {
+                    for (int index = 0; index < NM ; index += 16) {
                         __m128i lo8 = _mm_loadl_epi64( (const __m128i*)(in + index));
                         __m128i hi8 = _mm_loadl_epi64( (const __m128i*)(in + index + 8));
                         __m256i lo32 = _mm256_cvtepu8_epi32(lo8);
@@ -263,11 +264,16 @@ PYBIND11_MODULE(mithral_wrapped, m) {
                 } else {
                     throw;
                 }
-            #endif 
-            return py::memoryview::from_buffer(
-                out,                               // buffer pointer
-                { self.N, self.M },                                  // shape (rows, cols)
-                { sizeof(float), sizeof(float) * self.N }   // strides in bytes
+            #endif
+
+            pybind11::capsule cleanup(out, [](void *f) {
+                free(f);
+            });
+            return pybind11::array_t<float>(
+               {self.N, self.M},          // shape
+               {sizeof(float), self.N * sizeof(float)}, // stride, col major
+               out,   // pointer to data
+               cleanup        // garbage collection callback
             );
         }, py::return_value_policy::take_ownership)
         
