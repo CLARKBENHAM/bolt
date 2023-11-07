@@ -181,7 +181,7 @@ struct mithral_amm {
         encode_scales(encode_scales), encode_offsets(encode_offsets),
         idxs(idxs), nnz_per_centroid(nnz_per_centroid),
         tmp_codes(N, ncodebooks), codes(N, ncodebooks),
-        tmp_luts_f32(M, ncodebooks * lut_sz), luts(M, ncodebooks * lut_sz), //why did luts use N not M? When M then tmp_luts_f32 is good but luts is all 0s, but that's probably something else
+        tmp_luts_f32(M, ncodebooks * lut_sz), luts(M, ncodebooks * lut_sz),
         out_mat(N, M)
     {
         luts.setRandom();  // so profiling without LUT creation isn't undefined
@@ -196,7 +196,6 @@ struct mithral_amm {
         luts.resize(M, ncodebooks * lut_sz); 
         out_mat.resize(N,M);
     }
-
 
     void encode(const InputT* X) {
         // TODO add strides to these funcs so that we can pad number

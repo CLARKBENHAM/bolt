@@ -40,24 +40,54 @@ assert 5 == mithral_wrapped.add(2, 3) #imports worked
 
 
 data_sources = [md.load_cifar10_tasks(), md.load_cifar100_tasks()]
+
+row_enr = lambda y: entr(softmax(y*0.25+0.0000001, axis=1)).sum(axis=1)
+
+def close_wrong(y):
+  a=-np.sort(-y, axis=1)
+  return a[:,0] - a[:,1]
+
 #%%
 MetricsSoftmax = namedtuple("MetricsSoftmax", ["np_time", "py_fit_time", "py_est_time", "py_est_r2", "py_est_per_ix_kept", "copy_to_cpp_time", "cpp_est_time", "cpp_est_r2", "cpp_est_per_ix_kept"])
 
 results=[]
 results_std=[]
-codebook_arr = [2,4,8] #[ 2**i for i in range(1, int(np.log2(data.info["biases"].size)) + 1)]:
-NREPS=2#10
-NAVG=3#30
-for data in itertools.chain(*data_sources):
+swap_train_test=False
+hardest_y_by='log' #'', 'log', 'dist', where lower values are in test set
+for data in itertools.chain(*data_sources[1:]):
+  codebook_arr = [4,8] # [ 2**i for i in range(1, int(np.log2(data.info["biases"].size)) + 1)][-1:]
+  NREPS=1#10
+  NAVG=2#30
   print("$$$$$data", data.name)
   for ncodebooks in codebook_arr:
     print(f"ncodebooks={ncodebooks}")
     [W_test,W_train, X_test, X_train, Y_test, Y_train] = attrgetter('W_test','W_train', 'X_test', 'X_train', 'Y_test', 'Y_train')(data)
     #Mithral C++ doesn't work with counts not aligned to 32
     align32=len(Y_test)-(len(Y_test)%32)
+    Y =data.info['lbls_test'][:align32] # True cifar100 labels, Y_hat is only 70% correct
+    if swap_train_test:
+      W_test,W_train, X_test, X_train, Y_test, Y_train =W_train,W_test, X_train,X_test, Y_train, Y_test
+      align32=len(Y_test)-(len(Y_test)%32)
+      Y =data.info['lbls_train'][:align32] # True cifar100 labels, Y_hat is 99% correct
+    if hardest_y_by:
+      if hardest_y_by == 'dist':
+        _fn = close_wrong
+      elif hardest_y_by == 'log':
+        _fn = lambda z: row_enr(z) # positive if want easier
+      else:
+        assert(False)
+      Ys = np.concatenate([Y_train, Y_test])
+      Xs = np.concatenate([X_train, X_test])
+      sorted_ix = _fn(Ys).argsort() #smallest first
+      Y_test = Ys[sorted_ix[:len(Y_test)]]
+      Y_train = Ys[sorted_ix[-len(Y_train):]]
+      X_test = Xs[sorted_ix[:len(X_test)]]
+      X_train = Xs[sorted_ix[-len(X_train):]]
+      labels = np.concatenate([data.info['lbls_train'], data.info['lbls_test']])
+      Y = labels[sorted_ix[:len(Y)]]
+
     Y_test=Y_test[:align32]
     X_test=X_test[:align32]
-    Y =data.info['lbls_test'][:align32] # True cifar100 labels, Y_hat is only 70% correct
     min_trials = []
     for _ in range(NAVG):
       trials=[]
@@ -77,36 +107,35 @@ for data in itertools.chain(*data_sources):
         t = time.perf_counter()
         est.fit(X_train,W_train)
         py_fit_time=time.perf_counter() - t
-   
-        t = time.perf_counter()
-        Y_hat1 = est.predict(X_test, W_test)
-        py_est_time=time.perf_counter() - t
-        py_est_r2 = r2_score(Y_hat,Y_hat1)
-        py_max_ix=np.apply_along_axis(np.argmax, 1, Y_hat1)
-        py_est_per_ix_kept=np.mean(py_max_ix==Y)
         
         task=mithral_wrapped.mithral_amm_task_float(*X_test.shape,W_test.shape[1], ncodebooks, lutconsts)
         task.amm.out_mat = np.zeros(task.amm.out_mat.shape)
         t = time.perf_counter()
         copy_python_to_amm(est, task.amm)
-        copy_python_luts(est, task.amm) # Or can make luts in C++
         task.X=X_test
         task.Q=W_test
         copy_to_cpp_time=time.perf_counter() - t
-        #task.encode() #X is what changes each time, need to include in timing
-  
-        #task.Q=W_train[:len(W_test)]  # W_train and W_test the same here; not needed
-        #task.lut() #making luts in C++ and Py has R^2 of 0.999 
-        #task.Q =W_test
-        t = time.perf_counter()
-        #task.encode()
-        #Y_hat2=task.amm.scan_ret_col_order_upcast() # slower, upcasting doesn't add pred accuracy only R2
         
-        task.run_matmul(False) #Use train Luts since w_train==w_test
-        Y_hat2=task.amm.out_mat #Since we just care about relative order for predicting output
+        t = time.perf_counter()
+        #assert(est.A_enc and est.luts)
+        Y_hat1 = est.predict(X_test, W_test)
+        py_est_time=time.perf_counter() - t
+        py_est_r2 = r2_score(Y_hat,Y_hat1)
+        py_max_ix=np.apply_along_axis(np.argmax, 1, Y_hat1)
+        py_est_per_ix_kept=np.mean(py_max_ix==Y)
+   
+        # either copy centroids to C++ and make, or copy over luts from python
+        task.lut() #luts from C++ and Py R^2=0.999. Weights known before running 
+        #copy_python_luts(est, task.amm) # Or can make luts in C++. These use the python centroids
+        t = time.perf_counter()
+        task.encode() #X is what changes each time, need to include in timing. Done in run_matmul
+        Y_hat2=task.amm.scan_ret_col_order_upcast() # slower, upcasting doesn't add pred accuracy only R2
+        #task.run_matmul(False) #Use train Luts since w_train==w_test
+        #Y_hat2=task.amm.out_mat #Since we just care about relative order for predicting output
         cpp_est_time=time.perf_counter() - t
         ## correct output if returning uint8s
         #Y_hat2=(Y_hat2.astype(np.float32)*task.amm.ncodebooks/task.amm.out_scale) + task.amm.out_offset_sum 
+        
         cpp_est_r2=r2_score(Y_hat, Y_hat2)
         cpp_max_ix=np.apply_along_axis(np.argmax, 1, Y_hat2)
         #cpp_est_per_ix_kept=np.mean(cpp_max_ix==max_ix) # How often the same as mat mutl, what we care about
@@ -139,14 +168,40 @@ for data in itertools.chain(*data_sources):
   print(f"Py/C++ time ratio: {[i/j for i,j in zip(min_np_times, min_mithral_times)]}")
 
 #%%
-quit() # Below works but don't want to run as script
-plt.title("Raw Y")
-plt.hist(Y_test.flatten(),bins=30,label='Y',alpha=0.3)
-plt.hist(Y_hat1.flatten(),bins=30,label='Y_hat1 (py)', alpha=0.3)
-plt.hist(Y_hat2.flatten(),bins=30,label='Y_hat2 (cpp)', alpha=0.3)
+# quit() # Below works but don't want to run as script
+#[W_test,W_train, X_test, X_train, Y_test, Y_train] = attrgetter('W_test','W_train', 'X_test', 'X_train', 'Y_test', 'Y_train')(data)
+
+plt.title("Raw Y embeddings, flattened")
+plt.hist(Y_train.flatten(),bins=30,label='Y_train',alpha=0.3,density=True)
+plt.hist(Y_test.flatten(),bins=30,label='Y_test',alpha=0.3,density=True)
+plt.hist(Y_hat1.flatten(),bins=30,label='Y_hat1 (py)', alpha=0.3,density=True)
+plt.hist(Y_hat2.flatten(),bins=30,label='Y_hat2 (cpp)', alpha=0.3,density=True)
+
+plt.hist(Y_hat1[np.arange(len(Y)),Y],bins=30,label='Y_hat1 (py) Value for Correct', alpha=0.3,density=True)
+plt.hist(Y_hat2[np.arange(len(Y)),Y],bins=30,label='Y_hat2 (cpp) Value for Correct', alpha=0.3,density=True)
+plt.legend()
+plt.show()
+#%%
+# Training data is more linearly seperable: the model's gotten better at telling those points apart
+from scipy.special import entr, softmax
+
+plt.title(f"entropy of each Y's output as class probabilities on {data.name} with {ncodebooks} codebooks")
+plt.hist(row_enr(Y_train) , bins=30 , label=f'Y_train {row_enr(Y_train).mean():.2f}'     , alpha=0.3, density=True)
+plt.hist(row_enr(Y_test)  , bins=30 , label=f'Y_test {row_enr(Y_test).mean():.2f}'      , alpha=0.3, density=True)
+plt.hist(row_enr(Y_hat1)  , bins=30 , label=f'Y_hat1(py) {row_enr(Y_hat1).mean():.2f}'  , alpha=0.3, density=True)
+plt.hist(row_enr(Y_hat2)  , bins=30 , label=f'Y_hat2(cpp) {row_enr(Y_hat2).mean():.2f}' , alpha=0.3, density=True)
 plt.legend()
 plt.show()
 
+plt.title(f"How close 2nd class is to first on {data.name} with {ncodebooks} codebooks ")
+plt.hist(close_wrong(Y_train) , bins=30 , label=f'Y_train {close_wrong(Y_train).mean():.2f}'     , alpha=0.3, density=True)
+plt.hist(close_wrong(Y_test)  , bins=30 , label=f'Y_test {close_wrong(Y_test).mean():.2f}'      , alpha=0.3, density=True)
+plt.hist(close_wrong(Y_hat1)  , bins=30 , label=f'Y_hat1(py) {close_wrong(Y_hat1).mean():.2f}'  , alpha=0.3, density=True)
+plt.hist(close_wrong(Y_hat2)  , bins=30 , label=f'Y_hat2(cpp) {close_wrong(Y_hat2).mean():.2f}' , alpha=0.3, density=True)
+plt.legend()
+plt.show()
+
+#%%
 plt.title("Max Ix")
 plt.hist(max_ix,label='Y_ix',alpha=0.3)
 plt.hist(py_max_ix,label='Y_hat1_ix (py)', alpha=0.3)

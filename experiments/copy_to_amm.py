@@ -16,7 +16,6 @@ def extract_py_vars(est):
   raw_splitvals=[[v for i in a for v in i.vals]
                      for a in est.enc.splits_lists 
                      ]
-  default_sz = max(map(len, raw_splitvals))
   ## i idx is 2^{i-1} value can split nodes for all the ncodebook subspaces
   #C++ expects 0 padded values out to 16 per BST of split values, on 1 indexed array
   # [0,v1,v2,v2,v3,v3,v3,v3,v4,v4,v4,v4,v4,v4,v4,v4]
@@ -44,8 +43,8 @@ def extract_py_vars(est):
       #Python encode_X (idxs?!) = offsets into raveled indxs + idxs=[[i%16]*ncodebooks for i in range(N)]), the offset is added to each idxs row
       #cpp out_offset_sum/out_scale is set by results at _compute_offsets_scale_from_mins_maxs, after done learning luts in mithral_lut_dense&mithral_lut_spares. no need to copy
       #   But then it's never used?
-      "out_offset_sum": np.float32(est.offset),
-      "out_scale":      np.float32(est.scale),
+  #    "out_offset_sum": np.float32(est.offset),
+  #    "out_scale":      np.float32(est.scale),
   }
 
 def extract_mithral_vars(amm):
@@ -65,22 +64,18 @@ def copy_python_to_amm(py_est, amm):
   Doesn't matter if this fn is in current file or test_mithral_for_embeddings.py
   """
   py_vars = extract_py_vars(py_est)
-  [c, d,v,eo,es, osum, oscale] = itemgetter('centroids', 'splitdims','splitvals', 'encode_offsets', 'encode_scales', 'out_offset_sum', 'out_scale')(py_vars)
+  #[c, d,v,eo,es, osum, oscale] = itemgetter('centroids', 'splitdims','splitvals', 'encode_offsets', 'encode_scales', 'out_offset_sum', 'out_scale')(py_vars)
+  [c, d,v,eo,es] = itemgetter('centroids', 'splitdims','splitvals', 'encode_offsets', 'encode_scales')(py_vars)
   amm.setCentroidsCopyData(c)
   amm.setSplitdimsCopyData(d)
   amm.setSplitvalsCopyData(v)
   amm.setEncode_scalesCopyData(es)
   amm.setEncode_offsetsCopyData(eo)
-  amm.out_offset_sum = osum
-  amm.out_scale  = oscale
-  #amm.setIdxs(.astype(int)) #only for non-dense
+  # Only set this outputs or debuging
+  #amm.out_offset_sum = np.float32(est.offset)
+  #amm.out_scale  = np.float32(est.scale)
   
-  #m_vars = extract_mithral_vars(amm)
-  #[rmc, md,meo,mes, mosum, moscale] = itemgetter('raveled_centroids', 'splitdims','encode_offsets', 'encode_scales', 'out_offset_sum', 'out_scale')(m_vars)
-  #assert all(np.allclose(p,m)
-  #           for p,m in zip([np.ravel(c),  d, eo, es,  osum, oscale],
-  #                                  [rmc, md,meo,mes, mosum, moscale]))
-  #assert np.all(amm.getCentroids() == c) #shape wrong
+  #amm.setIdxs(.astype(int)) #only for non-dense
   assert np.all(np.ravel(amm.getCentroids()) == np.ravel(c)) 
   assert np.all(amm.getSplitdims() == d)
   #assert np.all(amm.getSplitvals() == v)
