@@ -53,11 +53,13 @@ MetricsSoftmax = namedtuple("MetricsSoftmax", ["np_time", "py_fit_time", "py_est
 results=[]
 results_std=[]
 swap_train_test=False
-hardest_y_by='log' #'', 'log', 'dist', where lower values are in test set
+split_by_y=None # Function to sort Ys, smaller values in test set
+#split_by_y = lambda z: row_enr(z)# positive if want easier
+#split_by_y = close_wrong
 for data in itertools.chain(*data_sources[1:]):
-  codebook_arr = [4,8] # [ 2**i for i in range(1, int(np.log2(data.info["biases"].size)) + 1)][-1:]
+  codebook_arr = [2,32,64] #[ 2**i for i in range(1, int(np.log2(data.info["biases"].size)) + 1)]
   NREPS=1#10
-  NAVG=2#30
+  NAVG=1#30
   print("$$$$$data", data.name)
   for ncodebooks in codebook_arr:
     print(f"ncodebooks={ncodebooks}")
@@ -65,20 +67,15 @@ for data in itertools.chain(*data_sources[1:]):
     #Mithral C++ doesn't work with counts not aligned to 32
     align32=len(Y_test)-(len(Y_test)%32)
     Y =data.info['lbls_test'][:align32] # True cifar100 labels, Y_hat is only 70% correct
+    W_test = np.random.rand(*W_train.shape) # check if luts made correctly
     if swap_train_test:
       W_test,W_train, X_test, X_train, Y_test, Y_train =W_train,W_test, X_train,X_test, Y_train, Y_test
       align32=len(Y_test)-(len(Y_test)%32)
       Y =data.info['lbls_train'][:align32] # True cifar100 labels, Y_hat is 99% correct
-    if hardest_y_by:
-      if hardest_y_by == 'dist':
-        _fn = close_wrong
-      elif hardest_y_by == 'log':
-        _fn = lambda z: row_enr(z) # positive if want easier
-      else:
-        assert(False)
+    if split_by_y:
       Ys = np.concatenate([Y_train, Y_test])
       Xs = np.concatenate([X_train, X_test])
-      sorted_ix = _fn(Ys).argsort() #smallest first
+      sorted_ix = split_by_y(Ys).argsort() #smallest first
       Y_test = Ys[sorted_ix[:len(Y_test)]]
       Y_train = Ys[sorted_ix[-len(Y_train):]]
       X_test = Xs[sorted_ix[:len(X_test)]]
@@ -120,9 +117,6 @@ for data in itertools.chain(*data_sources[1:]):
         #assert(est.A_enc and est.luts)
         Y_hat1 = est.predict(X_test, W_test)
         py_est_time=time.perf_counter() - t
-        py_est_r2 = r2_score(Y_hat,Y_hat1)
-        py_max_ix=np.apply_along_axis(np.argmax, 1, Y_hat1)
-        py_est_per_ix_kept=np.mean(py_max_ix==Y)
    
         # either copy centroids to C++ and make, or copy over luts from python
         task.lut() #luts from C++ and Py R^2=0.999. Weights known before running 
@@ -136,10 +130,14 @@ for data in itertools.chain(*data_sources[1:]):
         ## correct output if returning uint8s
         #Y_hat2=(Y_hat2.astype(np.float32)*task.amm.ncodebooks/task.amm.out_scale) + task.amm.out_offset_sum 
         
+        py_est_r2 = r2_score(Y_hat,Y_hat1)
         cpp_est_r2=r2_score(Y_hat, Y_hat2)
+        py_max_ix=np.apply_along_axis(np.argmax, 1, Y_hat1)
         cpp_max_ix=np.apply_along_axis(np.argmax, 1, Y_hat2)
-        #cpp_est_per_ix_kept=np.mean(cpp_max_ix==max_ix) # How often the same as mat mutl, what we care about
-        cpp_est_per_ix_kept=np.mean(cpp_max_ix==Y) # How often correct, what was reported in the paper
+        #py_est_per_ix_kept=np.mean(py_max_ix==Y)
+        #cpp_est_per_ix_kept=np.mean(cpp_max_ix==Y) # How often correct, what was reported in the paper
+        py_est_per_ix_kept=np.mean(py_max_ix==max_ix)
+        cpp_est_per_ix_kept=np.mean(cpp_max_ix==max_ix) # How often the same as mat mutl, what we care about
         o= MetricsSoftmax(np_time, py_fit_time, py_est_time, py_est_r2, py_est_per_ix_kept, copy_to_cpp_time, cpp_est_time, cpp_est_r2, cpp_est_per_ix_kept)
         trials += [o]
 
